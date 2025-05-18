@@ -944,6 +944,7 @@ with tab1:
     if st.session_state.get("show_about_tab1", False):
         st.info(
             """
+            - Abra o PDF do exame, aperte CTRL+A para selecionar tudo e CRTL+C para copiar. Cole tudo no campo acima.
             **Autor do Código Original:** Charles Ribas
             - Medicina (2016 - 2021) - Universidade de São Paulo
             - Letras - Tradução (2009 - 2012) - Universidade Nova de Lisboa
