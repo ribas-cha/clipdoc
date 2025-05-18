@@ -945,11 +945,12 @@ with tab1:
         st.info(
             """
             - Abra o PDF do exame, aperte CTRL+A para selecionar tudo e CRTL+C para copiar. Cole tudo no campo acima.
-            **Autor do Código Original:** Charles Ribas
+            
+            - **Autor do Código Original:** Charles Ribas
             - Medicina (2016 - 2021) - Universidade de São Paulo
             - Letras - Tradução (2009 - 2012) - Universidade Nova de Lisboa
 
-            **Aprimoramentos e Refatoração:** Modelo de IA Gemini
+            **Aprimoramentos:** Modelo de IA Gemini
             **Objetivo:** Facilitar a extração e formatação de dados de exames laboratoriais para agilizar o trabalho de profissionais de saúde.
             """
         )
