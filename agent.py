@@ -909,8 +909,8 @@ with tab1:
             - Medicina (2016 - 2021) - Universidade de São Paulo
             - Letras - Tradução (2009 - 2012) - Universidade Nova de Lisboa
 
-            **Aprimoramentos e Refatoração:** Modelo de IA Gemini
-            **Objetivo:** Facilitar a extração e formatação de dados de exames laboratoriais para agilizar o trabalho de profissionais de saúde.
+            **Aprimoramentos:** Modelo de IA Gemini 2.5 Pro
+            **Objetivo:** Facilitar a rotina do hospitalista.
             """
         )
     if st.session_state.get("show_compatible_exams_detailed_tab1", False):
@@ -1043,11 +1043,10 @@ with tab2: # Aba do Agente IA
                     st.warning("Por favor, descreva o caso do paciente.")
             if st.session_state.ia_output_orientacoes_alta:
                 st.markdown("---"); st.subheader("Orientações de Alta (Geradas pela IA):")
-
-st.markdown(st.session_state.ia_output_orientacoes_alta) 
-components.html(f"""<textarea id="cClipOrientAlta" style="opacity:0;position:absolute;left:-9999px;top:-9999px;">{st.session_state.ia_output_orientacoes_alta.replace("'", "&apos;").replace('"',"&quot;")}</textarea><button onclick="var t=document.getElementById('cClipOrientAlta');t.select();t.setSelectionRange(0,99999);try{{var s=document.execCommand('copy');var m=document.createElement('div');m.textContent=s?'Orientações copiadas!':'Falha.';m.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);padding:10px 20px;background-color:'+(s?'#28a745':'#dc3545')+';color:white;border-radius:5px;z-index:1000;';document.body.appendChild(m);setTimeout(function(){{document.body.removeChild(m);}},2000);}}catch(e){{alert('Não foi possível copiar.');}}" style="padding:10px 15px;background-color:#007bff;color:white;border:none;border-radius:5px;cursor:pointer;width:100%;margin-top:10px;">📋 Copiar Orientações de Alta</button>""", height=65)
-if st.button("Limpar Orientações de Alta", key="btn_clear_ia_orientacoes_alta"):
-    st.session_state.ia_output_orientacoes_alta = ""; st.rerun()
+                st.markdown(st.session_state.ia_output_orientacoes_alta) 
+                components.html(f"""<textarea id="cClipOrientAlta" style="opacity:0;position:absolute;left:-9999px;top:-9999px;">{st.session_state.ia_output_orientacoes_alta.replace("'", "&apos;").replace('"',"&quot;")}</textarea><button onclick="var t=document.getElementById('cClipOrientAlta');t.select();t.setSelectionRange(0,99999);try{{var s=document.execCommand('copy');var m=document.createElement('div');m.textContent=s?'Orientações copiadas!':'Falha.';m.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);padding:10px 20px;background-color:'+(s?'#28a745':'#dc3545')+';color:white;border-radius:5px;z-index:1000;';document.body.appendChild(m);setTimeout(function(){{document.body.removeChild(m);}},2000);}}catch(e){{alert('Não foi possível copiar.');}}" style="padding:10px 15px;background-color:#007bff;color:white;border:none;border-radius:5px;cursor:pointer;width:100%;margin-top:10px;">📋 Copiar Orientações de Alta</button>""", height=65)
+                if st.button("Limpar Orientações de Alta", key="btn_clear_ia_orientacoes_alta"):
+                    st.session_state.ia_output_orientacoes_alta = ""; st.rerun()
 
 
 # Rodapé comum
