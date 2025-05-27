@@ -246,14 +246,13 @@ def extract_coagulograma(lines):
     results["TP_s"] = extract_labeled_value(lines, "Tempo em segundos:", label_must_be_at_start=False, search_window_lines=0)
     inr_val = ""
     for i, line in enumerate(lines):
-        if "Internacional (RNI):" in line: # Procura pelo label completo primeiro
-            # O valor está na próxima linha no exemplo: "1,72  0,96 a 1,30"
+        if "Internacional (RNI):" in line: 
             if i + 1 < len(lines):
-                m_inr = re.search(NUM_PATTERN, lines[i+1]) # Pega o primeiro número da linha seguinte
+                m_inr = re.search(NUM_PATTERN, lines[i+1]) 
                 if m_inr:
                     inr_val = m_inr.group(1)
                     break 
-    if not inr_val: # Fallback se o label completo não foi encontrado ou o valor não estava na linha seguinte
+    if not inr_val: 
         inr_val = extract_labeled_value(lines, ["RNI:", "INR:"], label_must_be_at_start=False, search_window_lines=1)
     results["INR"] = inr_val
 
@@ -500,96 +499,79 @@ Sua análise (Resumo, Pontos de Discussão, Exame Físico a Avaliar, Sugestões 
     return gerar_resposta_ia(prompt)
 
 def evoluir_paciente_enfermaria_ia_fase2(resumo_ia_fase1, dados_medico_hoje, evolucao_anterior_original):
-    # Extrai os campos fixos da evolução anterior original
     linhas_evol_anterior = evolucao_anterior_original.splitlines()
     campos_fixos_dict = {}
-    campos_para_manter_labels = ["#CUIDADOS PALIATIVOS:", "#ID:", "#HD:", "#AP:", "#HDA:", "#MUC:", "#ALERGIAS:", "#ATB:", "#TEV:"]
+    campos_para_manter_labels = ["#ID:", "#HD:", "#AP:", "#HDA:", "#MUC:", "#ALERGIAS:", "#ATB:", "#TEV:"]
+    # O campo #CUIDADOS PALIATIVOS: será tratado separadamente para omissão.
     
     current_field_content = []
     current_field_label = None
 
     for linha in linhas_evol_anterior:
         linha_strip = linha.strip()
-        is_header_de_manter = any(linha_strip.startswith(h) for h in campos_para_manter_labels)
+        # Verifica se a linha começa com algum dos labels que queremos manter ou com #CUIDADOS PALIATIVOS:
+        is_header_de_manter = any(linha_strip.startswith(h) for h in campos_para_manter_labels) or \
+                              linha_strip.startswith("#CUIDADOS PALIATIVOS:")
+        
+        # Define outros headers que quebram o bloco de um campo que estamos capturando
         is_outro_header = any(linha_strip.startswith(h) for h in ["#EXAMES:", "#EVOLUÇÃO:", "#EXAME FÍSICO:", "#PLANO TERAPÊUTICO:", "#CONDUTA:", "#DATA PROVÁVEL DA ALTA:"])
         
         if is_header_de_manter:
-            if current_field_label and current_field_label in campos_para_manter_labels: # Salva o campo anterior se era um dos que queremos manter
+            if current_field_label and (current_field_label in campos_para_manter_labels or current_field_label == "#CUIDADOS PALIATIVOS:"):
                 campos_fixos_dict[current_field_label] = "\n".join(current_field_content).strip()
             
-            current_field_label = next((h for h in campos_para_manter_labels if linha_strip.startswith(h)), None)
+            current_field_label = next((h for h in campos_para_manter_labels + ["#CUIDADOS PALIATIVOS:"] if linha_strip.startswith(h)), None)
             current_field_content = [linha_strip.split(current_field_label, 1)[-1].strip()] if current_field_label else []
-        elif is_outro_header: # Se é um header que não queremos manter o conteúdo, mas quebra o bloco
-            if current_field_label and current_field_label in campos_para_manter_labels:
+        elif is_outro_header:
+            if current_field_label and (current_field_label in campos_para_manter_labels or current_field_label == "#CUIDADOS PALIATIVOS:"):
                 campos_fixos_dict[current_field_label] = "\n".join(current_field_content).strip()
             current_field_label = None 
             current_field_content = []
-        elif current_field_label in campos_para_manter_labels: # Continuação do conteúdo de um campo que queremos manter
+        elif current_field_label and (current_field_label in campos_para_manter_labels or current_field_label == "#CUIDADOS PALIATIVOS:"):
             current_field_content.append(linha_strip)
             
-    if current_field_label and current_field_label in campos_para_manter_labels: # Adiciona o último campo capturado
+    if current_field_label and (current_field_label in campos_para_manter_labels or current_field_label == "#CUIDADOS PALIATIVOS:"):
         campos_fixos_dict[current_field_label] = "\n".join(current_field_content).strip()
 
-    # Bloco de exames da evolução anterior
     exames_bloco_anterior_str = ""
     capturando_exames = False
     temp_exames_lines = []
     for linha in linhas_evol_anterior:
-        if linha.strip().startswith("#EXAMES:"):
-            capturando_exames = True
-        elif capturando_exames and linha.strip().startswith("#"):
-            capturando_exames = False 
-        if capturando_exames:
-            temp_exames_lines.append(linha)
+        if linha.strip().startswith("#EXAMES:"): capturando_exames = True
+        elif capturando_exames and linha.strip().startswith("#"): capturando_exames = False 
+        if capturando_exames: temp_exames_lines.append(linha)
     if temp_exames_lines: 
         exames_bloco_anterior_str = "\n".join(l.replace("#EXAMES:", "", 1).strip() for l in temp_exames_lines if l.strip() and not l.strip()=="#EXAMES:").strip()
 
-template_evolucao = f"""# UNIDADE DE INTERNAÇÃO - EVOLUÇÃO#
+    # Monta o template da evolução
+    template_evolucao_parts = ["# UNIDADE DE INTERNAÇÃO - EVOLUÇÃO#\n"]
 
-#CUIDADOS PALIATIVOS: {campos_fixos_dict.get("#CUIDADOS PALIATIVOS:", "")}
+    cuidados_paliativos_texto = campos_fixos_dict.get("#CUIDADOS PALIATIVOS:", "")
+    if cuidados_paliativos_texto and cuidados_paliativos_texto.lower() not in ["não", "nao", "no", "", "n", "negativo"]:
+        template_evolucao_parts.append(f"#CUIDADOS PALIATIVOS: {cuidados_paliativos_texto}\n")
+    
+    for label in ["#ID:", "#HD:", "#AP:", "#HDA:", "#MUC:", "#ALERGIAS:", "#ATB:", "#TEV:"]:
+        template_evolucao_parts.append(f"{label} {campos_fixos_dict.get(label, '')}\n")
 
-#ID: {campos_fixos_dict.get("#ID:", "")}
+    template_evolucao_parts.append(f"#EXAMES:\n{exames_bloco_anterior_str}\n[IA: ADICIONE AQUI os novos resultados de exames fornecidos pelo médico em 'Novos dados e observações'. Se não houver novos, mantenha o bloco acima como está ou indique 'Sem novos exames para hoje'.]\n")
+    template_evolucao_parts.append("#EVOLUÇÃO:\n[IA: Crie uma nova narrativa para HOJE. Integre de forma coesa com o contexto do paciente da 'Análise da IA sobre a evolução anterior' e os 'Novos dados e observações do médico'.]\n")
+    template_evolucao_parts.append("#EXAME FÍSICO:\n[IA: Mantenha o exame físico da evolução anterior (se contido na 'Análise da IA sobre a evolução anterior' ou na 'Evolução Anterior Original'). INTEGRE e ADICIONE as NOVAS ALTERAÇÕES e achados do exame físico fornecidos em 'Novos dados e observações do médico para a evolução de HOJE'. Formate cada item do exame físico começando com um hífen ('- ').]\n")
+    template_evolucao_parts.append("#PLANO TERAPÊUTICO:\n[IA: Formule o plano terapêutico para hoje. Baseie-se na 'Análise da IA', nas 'Sugestões de conduta da IA' e, crucialmente, nos 'Novos dados e observações do médico para a evolução de HOJE'. Apresente em formato de lista com hífen.]\n")
+    template_evolucao_parts.append("#CONDUTA:\n[IA: Formule as condutas para hoje na PRIMEIRA PESSOA (ex: 'Mantenho...', 'Prescrevo...', 'Solicito...'). Baseie-se em TODAS as informações: análise da IA, sugestões da IA e novos dados do médico. Apresente em formato de ITENS COM HÍFEN.]\n")
+    template_evolucao_parts.append("#DATA PROVÁVEL DA ALTA: [IA: Estime se houver informações suficientes. Caso contrário, mantenha 'SEM PREVISÃO' ou indique que depende da evolução.]")
+    
+    template_evolucao_final = "\n".join(template_evolucao_parts)
 
-#HD: {campos_fixos_dict.get("#HD:", "")}
 
-#AP: {campos_fixos_dict.get("#AP:", "")}
-
-#HDA: {campos_fixos_dict.get("#HDA:", "")}
-
-#MUC: {campos_fixos_dict.get("#MUC:", "")}
-
-#ALERGIAS: {campos_fixos_dict.get("#ALERGIAS:", "")}
-
-#ATB: {campos_fixos_dict.get("#ATB:", "")}
-
-#TEV: {campos_fixos_dict.get("#TEV:", "")}
-
-#EXAMES:
-{exames_bloco_anterior_str}
-[IA: ADICIONE AQUI os novos resultados de exames fornecidos pelo médico em 'Novos dados e observações'. Se não houver novos, mantenha o bloco acima como está ou indique "Sem novos exames para hoje".]
-
-#EVOLUÇÃO:
-[IA: Crie uma nova narrativa para HOJE (campo EVOLUÇÃO) baseada nos 'Novos dados e observações do médico'. Integre de forma coesa com o contexto do paciente da 'Análise da IA sobre a evolução anterior'. Não inclua aqui os cabeçalhos como HD, AP etc., apenas a narrativa do dia.]
-
-#EXAME FÍSICO:
-[IA: Mantenha o exame físico da evolução anterior (se contido na 'Análise da IA sobre a evolução anterior' ou na 'Evolução Anterior Original'). INTEGRE e ADICIONE as NOVAS ALTERAÇÕES e achados do exame físico fornecidos em 'Novos dados e observações do médico para a evolução de HOJE'. Formate cada item do exame físico começando com um hífen ('- ').]
-
-#PLANO TERAPÊUTICO:
-[IA: Formule o plano terapêutico para hoje. Baseie-se na 'Análise da IA', nas 'Sugestões de conduta da IA' e, crucialmente, nos 'Novos dados e observações do médico para a evolução de HOJE'. Apresente em formato de lista com hífen.]
-
-#CONDUTA:
-[IA: Formule as condutas para hoje na PRIMEIRA PESSOA (ex: 'Mantenho...', 'Prescrevo...', 'Solicito...'). Baseie-se em TODAS as informações: análise da IA, sugestões da IA e novos dados do médico. Apresente em formato de ITENS COM HÍFEN.]
-
-#DATA PROVÁVEL DA ALTA: [IA: Estime se houver informações suficientes. Caso contrário, mantenha 'SEM PREVISÃO' ou indique que depende da evolução.]
-"""
-
-prompt = f"""Você é um médico hospitalista experiente.
+    prompt = f"""Você é um médico hospitalista experiente.
 Sua tarefa é gerar uma nota de EVOLUÇÃO MÉDICA para HOJE.
 MANTENHA OS SEGUINTES CAMPOS EXATAMENTE COMO ESTÃO NA 'Evolução Anterior Original', A MENOS QUE HAJA INFORMAÇÃO CONTRADITÓRIA DIRETA NOS 'Novos dados e observações do médico para a evolução de HOJE' que claramente substitua o conteúdo anterior:
-#CUIDADOS PALIATIVOS, #ID, #HD, #AP, #HDA, #MUC, #ALERGIAS, #ATB, #TEV.
+#ID, #HD, #AP, #HDA, #MUC, #ALERGIAS, #ATB, #TEV.
+O campo #CUIDADOS PALIATIVOS: deve ser omitido se não houver informação relevante ou se for negativo na evolução anterior.
 Para o campo #EXAMES, mantenha os exames da evolução anterior e ADICIONE os novos exames/resultados fornecidos pelo médico.
-A IA DEVE GERAR NOVO CONTEÚDO principalmente para #EVOLUÇÃO (narrativa do dia), #EXAME FÍSICO (integrando novos achados), #PLANO TERAPÊUTICO (lista com hífen) e #CONDUTA (em primeira pessoa e com hífens).
+A IA DEVE GERAR NOVO CONTEÚDO principalmente para #EVOLUÇÃO, #EXAME FÍSICO (integrando novos achados), #PLANO TERAPÊUTICO (lista com hífen) e #CONDUTA (em primeira pessoa e com hífens).
 Remova quaisquer instruções entre colchetes (como "[IA: ...]") da saída final.
+Adicione uma linha em branco após cada um dos campos principais (ex: após #HDA:, após #MUC:, etc.).
 
 (1) Análise da IA sobre a evolução anterior (Resumo do caso, Pontos de discussão, Exame físico a avaliar, Sugestões de conduta da IA):
 ---
@@ -607,9 +589,9 @@ Remova quaisquer instruções entre colchetes (como "[IA: ...]") da saída final
 ---
 
 Gere a nota de EVOLUÇÃO MÉDICA para HOJE, preenchendo o modelo abaixo com base em TODAS as informações disponíveis e seguindo as instruções específicas para cada campo:
-{template_evolucao}
+{template_evolucao_final}
 """
-return gerar_resposta_ia(prompt)
+    return gerar_resposta_ia(prompt)
 
 
 def preencher_admissao_ia(info_caso):
@@ -646,7 +628,7 @@ def preencher_admissao_ia(info_caso):
 
 #CONDUTA:
 
-#DATA PROVÁVEL DA ALTA: SEM PREVISÃO""" # Removido os placeholders [IA: ...]
+#DATA PROVÁVEL DA ALTA: SEM PREVISÃO"""
 
     prompt = f"""Você é um assistente médico eficiente. Preencha o seguinte modelo de admissão hospitalar com as informações fornecidas sobre o caso do paciente.
 Se alguma informação específica para um campo não for fornecida no texto do caso, deixe o campo correspondente em branco.
@@ -699,22 +681,15 @@ Orientações de Alta (Sinais de Alerta para Retorno ao PS):
 
 # --- Função Principal de Análise de Exames (parse_lab_report) ---
 def parse_lab_report(text):
-    # Função para anonimizar nomes
     def anonimizar_nome(match):
         nome_completo = match.group(0)
         partes_nome = nome_completo.split()
-        if len(partes_nome) > 1: # Garante que há pelo menos nome e sobrenome
+        if len(partes_nome) > 1: 
             iniciais = [p[0] + "." for p in partes_nome]
             return " ".join(iniciais)
-        return nome_completo # Retorna original se não for um nome típico
-
-    # Regex para encontrar nomes próprios (pode precisar de ajustes para maior precisão/abrangência)
-    # Este regex tenta pegar sequências de palavras capitalizadas, comum em nomes.
-    # Exclui algumas palavras comuns capitalizadas que não são nomes (DR, DRA, SR, SRA, etc.)
-    # e palavras totalmente em maiúsculas (como siglas).
+        return nome_completo 
     padrao_nome = r"\b(?!DR|DRA|SR|SRA|DO|DA|DE|DOS|DAS\b)([A-ZÀ-Ú][a-zà-ú]+(?:\s+[A-ZÀ-Ú][a-zà-ú]+)+)\b"
     text = re.sub(padrao_nome, anonimizar_nome, text)
-
 
     subs = [("ur[eé]ia","Ureia"),("pot[aá]ssio","Potássio"),("s[oó]dio","Sódio"),
             ("c[aá]lcio i[oô]nico","Cálcio Iônico"),("magn[eé]sio","Magnésio"),
@@ -909,8 +884,8 @@ with tab1:
             - Medicina (2016 - 2021) - Universidade de São Paulo
             - Letras - Tradução (2009 - 2012) - Universidade Nova de Lisboa
 
-            **Aprimoramentos:** Modelo de IA Gemini 2.5 Pro
-            **Objetivo:** Facilitar a rotina do hospitalista.
+            **Aprimoramentos e Refatoração:** Modelo de IA Gemini
+            **Objetivo:** Facilitar a extração e formatação de dados de exames laboratoriais para agilizar o trabalho de profissionais de saúde.
             """
         )
     if st.session_state.get("show_compatible_exams_detailed_tab1", False):
@@ -1045,7 +1020,7 @@ with tab2: # Aba do Agente IA
                 st.markdown("---"); st.subheader("Orientações de Alta (Geradas pela IA):")
                 st.markdown(st.session_state.ia_output_orientacoes_alta) 
                 components.html(f"""<textarea id="cClipOrientAlta" style="opacity:0;position:absolute;left:-9999px;top:-9999px;">{st.session_state.ia_output_orientacoes_alta.replace("'", "&apos;").replace('"',"&quot;")}</textarea><button onclick="var t=document.getElementById('cClipOrientAlta');t.select();t.setSelectionRange(0,99999);try{{var s=document.execCommand('copy');var m=document.createElement('div');m.textContent=s?'Orientações copiadas!':'Falha.';m.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);padding:10px 20px;background-color:'+(s?'#28a745':'#dc3545')+';color:white;border-radius:5px;z-index:1000;';document.body.appendChild(m);setTimeout(function(){{document.body.removeChild(m);}},2000);}}catch(e){{alert('Não foi possível copiar.');}}" style="padding:10px 15px;background-color:#007bff;color:white;border:none;border-radius:5px;cursor:pointer;width:100%;margin-top:10px;">📋 Copiar Orientações de Alta</button>""", height=65)
-                if st.button("Limpar Orientações de Alta", key="btn_clear_ia_orientacoes_alta"):
+                if st.button("Limpar Orientações de Alta", key="btn_clear_ia_orientacoes_alta"): # CORREÇÃO DA INDENTAÇÃO AQUI
                     st.session_state.ia_output_orientacoes_alta = ""; st.rerun()
 
 
