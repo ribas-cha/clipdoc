@@ -609,7 +609,7 @@ Remova quaisquer instruções entre colchetes (como "[IA: ...]") da saída final
 Gere a nota de EVOLUÇÃO MÉDICA para HOJE, preenchendo o modelo abaixo com base em TODAS as informações disponíveis e seguindo as instruções específicas para cada campo:
 {template_evolucao}
 """
-    return gerar_resposta_ia(prompt)
+return gerar_resposta_ia(prompt)
 
 
 def preencher_admissao_ia(info_caso):
