@@ -733,7 +733,7 @@ def parse_lab_report(text):
                                      "MARCADORES_INFLAM_CARD", "HEPATOGRAMA_PANCREAS", "MEDICAMENTOS", "GASOMETRIA", 
                                      "URINA_I", "SOROLOGIAS", "CULTURAS", "OUTROS"]}
 
-  if all_res.get("datetime"): out_sections["HEADER"].append(all_res["datetime"])
+    if all_res.get("datetime"): out_sections["HEADER"].append(all_res["datetime"])
 
     for k, lbl in [("Hb","Hb"),("Ht","Ht"),("VCM","VCM"),("HCM","HCM"),("CHCM","CHCM"),("RDW","RDW")]:
         if all_res.get(k): out_sections["HEMOGRAMA"].append(format_value_with_alert(lbl, all_res[k], k))
