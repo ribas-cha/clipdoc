@@ -44,7 +44,7 @@ VALORES_REFERENCIA = {
     "ALB": {"min": 3.5, "max": 5.2},
     "AML": {"max": 100},
     "LIP": {"max": 160},
-    "Vanco": {"min": 15.0, "max": 20.0, "crit_low": 10.0, "crit_high": 25.0},
+    "Vanco": {"min": 15.0, "max": 20.0, "crit_low": 10.0, "crit_high": 25.0}, 
     "pH_gas": {"min": 7.35, "max": 7.45, "crit_low": 7.0, "crit_high": 7.8},
     "pCO2_gas": {"min": 35, "max": 45, "crit_low": 20, "crit_high": 80},
     "HCO3_gas": {"min": 22, "max": 28, "crit_low": 10, "crit_high": 40},
@@ -246,12 +246,17 @@ def extract_coagulograma(lines):
     results["TP_s"] = extract_labeled_value(lines, "Tempo em segundos:", label_must_be_at_start=False, search_window_lines=0)
     inr_val = ""
     for i, line in enumerate(lines):
-        if "Internacional (RNI):" in line:
+        if "Internacional (RNI):" in line: # Procura pelo label completo primeiro
+            # O valor está na próxima linha no exemplo: "1,72  0,96 a 1,30"
             if i + 1 < len(lines):
-                m_inr = re.search(NUM_PATTERN, lines[i+1])
-                if m_inr: inr_val = m_inr.group(1); break
-    if not inr_val: inr_val = extract_labeled_value(lines, ["RNI:", "INR:"], label_must_be_at_start=False, search_window_lines=1)
+                m_inr = re.search(NUM_PATTERN, lines[i+1]) # Pega o primeiro número da linha seguinte
+                if m_inr:
+                    inr_val = m_inr.group(1)
+                    break 
+    if not inr_val: # Fallback se o label completo não foi encontrado ou o valor não estava na linha seguinte
+        inr_val = extract_labeled_value(lines, ["RNI:", "INR:"], label_must_be_at_start=False, search_window_lines=1)
     results["INR"] = inr_val
+
     ttpa_idx = next((i for i, l in enumerate(lines) if ("tempo de tromboplastina parcial ativado" in l.lower() or "ttpa" in l.lower()) and "tempo de protrombina" not in l.lower()), -1)
     if ttpa_idx != -1:
         search_ttpa = lines[ttpa_idx:]
@@ -281,46 +286,36 @@ def extract_hepatograma_pancreas(lines):
     tgo_val, tgp_val = "", ""
     hepatograma_keywords = ["bilirrubina", "fosfatase alcalina", "gama-gt", "ggt", "albumina", 
                             "transaminase", "ast", "alt", "tgo", "tgp"]
-    is_hepatograma_context = any(keyword in line_chunk.lower() for line_chunk in lines for keyword in hepatograma_keywords) 
+    is_hepatograma_context = any(keyword in line.lower() for line in lines for keyword in hepatograma_keywords) 
     
-    if is_hepatograma_context: # Só tenta TGO/TGP se o contexto for de hepatograma
+    if is_hepatograma_context:
         for i, line in enumerate(lines):
-            if not tgo_val and ("Transaminase oxalacética - TGO" in line or "Aspartato amino transferase" in line and "TGO" in line):
-                # Procura valor nas próximas linhas, preferencialmente com U/L
+            if not tgo_val and "Transaminase oxalacética - TGO" in line:
                 for offset in range(1, 4): 
                     if i + offset < len(lines):
                         m = re.match(r"^\s*" + NUM_PATTERN + r"\s*U/L", lines[i+offset]) 
                         if m: tgo_val = m.group(1); break
-                if not tgo_val: # Fallback se não achou com U/L, tenta só número na linha esperada
-                    for offset in range(1, 4):
-                         if i + offset < len(lines):
-                            m = re.search(NUM_PATTERN, lines[i+offset])
-                            if m: tgo_val = m.group(1); break # Pega o primeiro número que achar
-            
-            if not tgp_val and ("Transaminase pirúvica - TGP" in line or "Alanina amino transferase" in line and "TGP" in line):
+                if not tgo_val and i + 2 < len(lines):
+                     m = re.search(NUM_PATTERN, lines[i+2])
+                     if m: tgo_val = m.group(1)
+            if not tgp_val and "Transaminase pirúvica - TGP" in line:
                 for offset in range(1, 4):
                     if i + offset < len(lines):
                         m = re.match(r"^\s*" + NUM_PATTERN + r"\s*U/L", lines[i+offset])
                         if m: tgp_val = m.group(1); break
-                if not tgp_val:
-                    for offset in range(1, 4):
-                        if i + offset < len(lines):
-                            m = re.search(NUM_PATTERN, lines[i+offset])
-                            if m: tgp_val = m.group(1); break
+                if not tgp_val and i + 2 < len(lines):
+                     m = re.search(NUM_PATTERN, lines[i+2])
+                     if m: tgp_val = m.group(1)
             if tgo_val and tgp_val: break 
-        
         results["TGO"] = tgo_val
         results["TGP"] = tgp_val
-
-        # Fallbacks mais genéricos com require_unit, caso a lógica acima não pegue
-        if not results["TGO"]: results["TGO"] = extract_labeled_value(lines, ["TGO", "AST"], label_must_be_at_start=False, search_window_lines=1, require_unit="U/L")
-        if not results["TGP"]: results["TGP"] = extract_labeled_value(lines, ["TGP", "ALT"], label_must_be_at_start=False, search_window_lines=1, require_unit="U/L")
+        if not results["TGO"]: results["TGO"] = extract_labeled_value(lines, ["TGO", "AST", "Aspartato amino transferase"], label_must_be_at_start=False, search_window_lines=1, require_unit="U/L")
+        if not results["TGP"]: results["TGP"] = extract_labeled_value(lines, ["TGP", "ALT", "Alanina amino transferase"], label_must_be_at_start=False, search_window_lines=1, require_unit="U/L")
     
-    # Outros exames do hepatograma
     for k, lbls in [("GGT", ["Gama-Glutamil Transferase","GGT"]), ("FA", "Fosfatase Alcalina"),
                     ("BT", "Bilirrubina Total"), ("BD", "Bilirrubina Direta"), ("BI", "Bilirrubina Indireta"),
                     ("ALB", "Albumina"), ("AML", "Amilase"), ("LIP", "Lipase")]:
-        if k not in results or not results[k]: 
+        if k not in results or not results[k]:
             results[k] = extract_labeled_value(lines, lbls, label_must_be_at_start=True, search_window_lines=1)
     return results
 
@@ -393,73 +388,61 @@ def extract_urina_tipo_i(lines):
 
 def extract_culturas(lines):
     found_cultures = []
-    processed_block_indices = set() # Para marcar inícios de blocos já processados
+    processed_block_indices = set() 
     germe_regex = r"([A-Z][a-z]+\s(?:cf\.\s)?[A-Z]?[a-z]+)" 
-
+    current_culture_block_lines = []
+    block_start_index = -1
     for i, line_content in enumerate(lines):
-        if i in processed_indices:
-            continue
-
         l_line = line_content.lower()
-        is_culture_header = "cultura de urina" in l_line or "urocultura" in l_line or "hemocultura" in l_line
-        
-        if is_culture_header:
-            # Delimitar o bloco da cultura atual
-            current_block_lines = []
-            block_start_index = i
-            # Adiciona a linha do header e as seguintes até encontrar um novo header de cultura ou o fim do arquivo
-            for j in range(i, len(lines)):
-                if j > i: # Se não for a primeira linha do bloco
-                    next_line_lower = lines[j].lower()
-                    if "cultura de urina" in next_line_lower or \
-                       "urocultura" in next_line_lower or \
-                       "hemocultura" in next_line_lower:
-                        break # Encontrou o header da próxima cultura
-                current_block_lines.append(lines[j])
-                processed_indices.add(j) # Marca como processada para não iniciar um novo bloco com ela
-
-            if current_culture_block_lines:
+        is_new_culture_header = "cultura de urina" in l_line or \
+                                "urocultura" in l_line or \
+                                "hemocultura" in l_line
+        if is_new_culture_header:
+            if block_start_index != -1 and current_culture_block_lines: 
                 culture_data = process_single_culture_block(current_culture_block_lines, germe_regex)
-                if culture_data: # Apenas adiciona se o processamento do bloco foi bem-sucedido
-                    # Evitar duplicatas exatas (mesmo tipo e mesmo resultado principal)
-                    is_duplicate = False
-                    for existing_cult in found_cultures:
-                        if existing_cult.get("Tipo") == culture_data.get("Tipo") and \
-                           existing_cult.get("Resultado") == culture_data.get("Resultado"):
-                           # Poderia adicionar uma checagem mais robusta se necessário (ex: antibiograma)
-                           is_duplicate = True
-                           break
-                    if not is_duplicate:
-                        found_cultures.append(culture_data)
-                        
-    return found_cultures
+                if culture_data: found_cultures.append(culture_data)
+                for proc_idx in range(block_start_index, i): processed_indices.add(proc_idx) 
+            current_culture_block_lines = [] 
+            block_start_index = i
+        if block_start_index != -1 and i not in processed_indices: 
+            current_culture_block_lines.append(line_content)
+    if current_culture_block_lines and block_start_index != -1: 
+        culture_data = process_single_culture_block(current_culture_block_lines, germe_regex)
+        if culture_data: found_cultures.append(culture_data)
+        for proc_idx in range(block_start_index, len(lines)): processed_indices.add(proc_idx)
+
+    final_cultures = []
+    seen_types_and_results = set()
+    for cult in found_cultures:
+        cult_id_tuple = (cult.get("Tipo"), cult.get("Resultado","").split(" / ")[0]) 
+        is_meaningful_hmc_negative = "HMC" in cult.get("Tipo","") and cult.get("Resultado","") == "(-)"
+        is_positive_result = "(+)" in cult.get("Resultado","")
+        has_antibiogram = any(val for val in cult.get("Antibiograma", {}).values())
+        if is_meaningful_hmc_negative or is_positive_result or has_antibiogram:
+            if cult_id_tuple not in seen_types_and_results or is_meaningful_hmc_negative: 
+                final_cultures.append(cult)
+                if not is_meaningful_hmc_negative: 
+                    seen_types_and_results.add(cult_id_tuple)
+    return final_cultures
 
 
 def process_single_culture_block(block_lines, germe_regex):
     current_culture_data = {}
     culture_type_label, culture_type_detail, sample_info = None, "", ""
     first_line_lower = block_lines[0].lower()
-
     if "cultura de urina" in first_line_lower or "urocultura" in first_line_lower:
         culture_type_label = "URC"
     elif "hemocultura" in first_line_lower:
         culture_type_detail = "Aeróbio" if "aeróbios" in first_line_lower or "aerobio" in first_line_lower else \
                               "Anaeróbio" if "anaeróbios" in first_line_lower or "anaerobio" in first_line_lower else ""
         culture_type_label = f"HMC {culture_type_detail}".strip()
-        
-        # Busca por amostra em qualquer linha do bloco, pois pode não estar na primeira
-        for line_in_block in block_lines:
-            sample_match = re.search(r"\(Amostra\s*(\d+/\d+)\)", line_in_block, re.IGNORECASE)
-            if sample_match: 
-                sample_info = f" Amostra {sample_match.group(1)}"
-                culture_type_label += sample_info # Adiciona ao tipo se encontrado
-                break # Pega a primeira info de amostra encontrada no bloco
-    
+        sample_match = re.search(r"\(Amostra\s*(\d+/\d+)\)", block_lines[0], re.IGNORECASE) or \
+                       (1 < len(block_lines) and re.search(r"\(Amostra\s*(\d+/\d+)\)", block_lines[1], re.IGNORECASE))
+        if sample_match: culture_type_label += f" Amostra {sample_match.group(1)}"
     if not culture_type_label: return None
     current_culture_data["Tipo"] = culture_type_label.strip()
-    
     result_text_found = "(-)" 
-    for r_line in block_lines: # Itera nas linhas do bloco atual
+    for r_line in block_lines:
         lc_r_line = r_line.lower()
         if lc_r_line.startswith("resultado:") or "resultado da cultura:" in lc_r_line:
             res_text = re.sub(r"(?i)(resultado:|resultado da cultura:)", "", r_line, count=1).strip()
@@ -469,12 +452,10 @@ def process_single_culture_block(block_lines, germe_regex):
             elif any(neg in res_text.lower() for neg in ["negativo", "negativa", "não houve crescimento", "ausência de crescimento"]):
                 result_text_found = "(-)"
             elif res_text: 
-                result_text_clean = res_text.split("Negativo")[0].strip() # Tenta pegar o que vem antes de "Negativo"
-                if result_text_clean: result_text_found = f"{result_text_clean} (+)" # Se sobrou algo, assume positivo
-                # Se result_text_clean for vazio, mantém o default "(-)" ou o que foi encontrado antes.
+                result_text_clean = res_text.split("Negativo")[0].strip() 
+                if result_text_clean: result_text_found = f"{result_text_clean} (+)"
             break 
     current_culture_data["Resultado"] = result_text_found
-
     antibiogram_results, antibiogram_start_idx_in_block = {"S": [], "I": [], "R": []}, -1
     for k, abg_line in enumerate(block_lines):
         if any(term in abg_line.lower() for term in ["antibiograma", "tsa", "teste de sensibilidade"]):
@@ -519,7 +500,7 @@ Sua análise (Resumo, Pontos de Discussão, Exame Físico a Avaliar, Sugestões 
     return gerar_resposta_ia(prompt)
 
 def evoluir_paciente_enfermaria_ia_fase2(resumo_ia_fase1, dados_medico_hoje, evolucao_anterior_original):
-    # Prepara os campos fixos da evolução anterior para inserção no prompt
+    # Extrai os campos fixos da evolução anterior original
     linhas_evol_anterior = evolucao_anterior_original.splitlines()
     campos_fixos_dict = {}
     campos_para_manter_labels = ["#CUIDADOS PALIATIVOS:", "#ID:", "#HD:", "#AP:", "#HDA:", "#MUC:", "#ALERGIAS:", "#ATB:", "#TEV:"]
@@ -529,26 +510,25 @@ def evoluir_paciente_enfermaria_ia_fase2(resumo_ia_fase1, dados_medico_hoje, evo
 
     for linha in linhas_evol_anterior:
         linha_strip = linha.strip()
-        is_header = any(linha_strip.startswith(h) for h in campos_para_manter_labels + ["#EXAMES:", "#EVOLUÇÃO:", "#EXAME FÍSICO:", "#PLANO TERAPÊUTICO:", "#CONDUTA:", "#DATA PROVÁVEL DA ALTA:"])
+        is_header_de_manter = any(linha_strip.startswith(h) for h in campos_para_manter_labels)
+        is_outro_header = any(linha_strip.startswith(h) for h in ["#EXAMES:", "#EVOLUÇÃO:", "#EXAME FÍSICO:", "#PLANO TERAPÊUTICO:", "#CONDUTA:", "#DATA PROVÁVEL DA ALTA:"])
         
-        if is_header:
-            if current_field_label and current_field_label in campos_para_manter_labels:
+        if is_header_de_manter:
+            if current_field_label and current_field_label in campos_para_manter_labels: # Salva o campo anterior se era um dos que queremos manter
                 campos_fixos_dict[current_field_label] = "\n".join(current_field_content).strip()
             
-            found_label = next((h for h in campos_para_manter_labels if linha_strip.startswith(h)), None)
-            if found_label:
-                current_field_label = found_label
-                current_field_content = [linha_strip.split(found_label, 1)[-1].strip()]
-            else: # Para outros headers que não queremos manter o conteúdo mas quebram o bloco
-                current_field_label = None 
-                current_field_content = []
-        elif current_field_label in campos_para_manter_labels:
+            current_field_label = next((h for h in campos_para_manter_labels if linha_strip.startswith(h)), None)
+            current_field_content = [linha_strip.split(current_field_label, 1)[-1].strip()] if current_field_label else []
+        elif is_outro_header: # Se é um header que não queremos manter o conteúdo, mas quebra o bloco
+            if current_field_label and current_field_label in campos_para_manter_labels:
+                campos_fixos_dict[current_field_label] = "\n".join(current_field_content).strip()
+            current_field_label = None 
+            current_field_content = []
+        elif current_field_label in campos_para_manter_labels: # Continuação do conteúdo de um campo que queremos manter
             current_field_content.append(linha_strip)
             
-    # Adiciona o último campo capturado
-    if current_field_label and current_field_label in campos_para_manter_labels:
+    if current_field_label and current_field_label in campos_para_manter_labels: # Adiciona o último campo capturado
         campos_fixos_dict[current_field_label] = "\n".join(current_field_content).strip()
-
 
     # Bloco de exames da evolução anterior
     exames_bloco_anterior_str = ""
@@ -558,36 +538,35 @@ def evoluir_paciente_enfermaria_ia_fase2(resumo_ia_fase1, dados_medico_hoje, evo
         if linha.strip().startswith("#EXAMES:"):
             capturando_exames = True
         elif capturando_exames and linha.strip().startswith("#"):
-            capturando_exames = False # Fim do bloco de exames
+            capturando_exames = False 
         if capturando_exames:
             temp_exames_lines.append(linha)
-    if temp_exames_lines: # Remove o header #EXAMES: se ele foi incluído
+    if temp_exames_lines: 
         exames_bloco_anterior_str = "\n".join(l.replace("#EXAMES:", "", 1).strip() for l in temp_exames_lines if l.strip() and not l.strip()=="#EXAMES:").strip()
 
+template_evolucao = f"""# UNIDADE DE INTERNAÇÃO - EVOLUÇÃO#
 
-    template_evolucao = f"""# UNIDADE DE INTERNAÇÃO - EVOLUÇÃO#
+#CUIDADOS PALIATIVOS: {campos_fixos_dict.get("#CUIDADOS PALIATIVOS:", "")}
 
-#CUIDADOS PALIATIVOS: {campos_fixos_dict.get("#CUIDADOS PALIATIVOS:", "[IA: Manter da evolução anterior ou deixar em branco se não houver informação] Você pode indicar 'Sim' ou 'Não' ou descrever.")}
+#ID: {campos_fixos_dict.get("#ID:", "")}
 
-#ID: {campos_fixos_dict.get("#ID:", "[IA: Manter da evolução anterior ou deixar em branco se não houver informação]")}
+#HD: {campos_fixos_dict.get("#HD:", "")}
 
-#HD: {campos_fixos_dict.get("#HD:", "[IA: Manter da evolução anterior ou atualizar com base nos novos dados, se fornecido pelo médico]")}
+#AP: {campos_fixos_dict.get("#AP:", "")}
 
-#AP: {campos_fixos_dict.get("#AP:", "[IA: Manter da evolução anterior ou atualizar com base nos novos dados, se fornecido pelo médico]")}
+#HDA: {campos_fixos_dict.get("#HDA:", "")}
 
-#HDA: {campos_fixos_dict.get("#HDA:", "[IA: Manter da evolução anterior ou atualizar com base nos novos dados, se fornecido pelo médico]")}
+#MUC: {campos_fixos_dict.get("#MUC:", "")}
 
-#MUC: {campos_fixos_dict.get("#MUC:", "[IA: Manter da evolução anterior ou atualizar com base nos novos dados, se fornecido pelo médico]")}
+#ALERGIAS: {campos_fixos_dict.get("#ALERGIAS:", "")}
 
-#ALERGIAS: {campos_fixos_dict.get("#ALERGIAS:", "[IA: Manter da evolução anterior ou atualizar com base nos novos dados, se fornecido pelo médico]")}
+#ATB: {campos_fixos_dict.get("#ATB:", "")}
 
-#ATB: {campos_fixos_dict.get("#ATB:", "[IA: Manter da evolução anterior ou atualizar com base nos novos dados, se fornecido pelo médico]")}
-
-#TEV: {campos_fixos_dict.get("#TEV:", "[IA: Manter da evolução anterior ou atualizar com base nos novos dados, se fornecido pelo médico]")}
+#TEV: {campos_fixos_dict.get("#TEV:", "")}
 
 #EXAMES:
 {exames_bloco_anterior_str}
-[IA: ADICIONE AQUI os novos resultados de exames fornecidos pelo médico em 'Novos dados e observações'. Formate como no bloco acima, se aplicável.]
+[IA: ADICIONE AQUI os novos resultados de exames fornecidos pelo médico em 'Novos dados e observações'. Se não houver novos, mantenha o bloco acima como está ou indique "Sem novos exames para hoje".]
 
 #EVOLUÇÃO:
 [IA: Crie uma nova narrativa para HOJE (campo EVOLUÇÃO) baseada nos 'Novos dados e observações do médico'. Integre de forma coesa com o contexto do paciente da 'Análise da IA sobre a evolução anterior'. Não inclua aqui os cabeçalhos como HD, AP etc., apenas a narrativa do dia.]
@@ -605,11 +584,12 @@ def evoluir_paciente_enfermaria_ia_fase2(resumo_ia_fase1, dados_medico_hoje, evo
 """
 
     prompt = f"""Você é um médico hospitalista experiente.
-Abaixo estão (1) a análise inicial da IA sobre a evolução anterior de um paciente, (2) a evolução anterior original para referência de dados estáticos, e (3) os novos dados e observações fornecidos pelo médico para o dia de hoje.
-Sua tarefa é gerar uma nota de EVOLUÇÃO MÉDICA completa e concisa para o prontuário, seguindo o modelo e as instruções específicas para cada campo fornecidas no template abaixo.
-Para os campos #CUIDADOS PALIATIVOS, #ID, #HD, #AP, #HDA, #MUC, #ALERGIAS, #ATB, #TEV, utilize a informação da "Evolução Anterior Original". A IA NÃO DEVE ALTERAR estes campos, a menos que uma informação nova e explícita seja fornecida pelo médico em "Novos dados e observações do médico para a evolução de HOJE" que claramente substitua o conteúdo anterior. Se não houver informação para um desses campos na evolução anterior, deixe em branco ou com a marcação original.
-O campo #EXAMES deve manter os exames da evolução anterior e adicionar quaisquer novos exames/resultados fornecidos pelo médico.
-A IA DEVE GERAR NOVO CONTEÚDO principalmente para #EVOLUÇÃO (narrativa do dia), #EXAME FÍSICO (integrando novos achados), #PLANO TERAPÊUTICO e #CONDUTA (em primeira pessoa e com hífens).
+Sua tarefa é gerar uma nota de EVOLUÇÃO MÉDICA para HOJE.
+MANTENHA OS SEGUINTES CAMPOS EXATAMENTE COMO ESTÃO NA 'Evolução Anterior Original', A MENOS QUE HAJA INFORMAÇÃO CONTRADITÓRIA DIRETA NOS 'Novos dados e observações do médico para a evolução de HOJE' que claramente substitua o conteúdo anterior:
+#CUIDADOS PALIATIVOS, #ID, #HD, #AP, #HDA, #MUC, #ALERGIAS, #ATB, #TEV.
+Para o campo #EXAMES, mantenha os exames da evolução anterior e ADICIONE os novos exames/resultados fornecidos pelo médico.
+A IA DEVE GERAR NOVO CONTEÚDO principalmente para #EVOLUÇÃO (narrativa do dia), #EXAME FÍSICO (integrando novos achados), #PLANO TERAPÊUTICO (lista com hífen) e #CONDUTA (em primeira pessoa e com hífens).
+Remova quaisquer instruções entre colchetes (como "[IA: ...]") da saída final.
 
 (1) Análise da IA sobre a evolução anterior (Resumo do caso, Pontos de discussão, Exame físico a avaliar, Sugestões de conduta da IA):
 ---
@@ -636,13 +616,21 @@ def preencher_admissao_ia(info_caso):
     template_admissao = """# UNIDADE DE INTERNAÇÃO - ADMISSÃO #
 
 #CUIDADOS PALIATIVOS:
+
 #ID: 
+
 #HD: 
+
 #AP: 
+
 #HDA: 
+
 #MUC:
+
 #ALERGIAS:
+
 #ATB: 
+
 #TEV: 
 
 #EXAMES:
@@ -651,14 +639,19 @@ def preencher_admissao_ia(info_caso):
 >LABS: 
 
 #AVALIAÇÃO: 
+
 #EXAME FÍSICO:
+
 #PLANO TERAPÊUTICO: 
+
 #CONDUTA:
-#DATA PROVÁVEL DA ALTA: SEM PREVISÃO"""
+
+#DATA PROVÁVEL DA ALTA: SEM PREVISÃO""" # Removido os placeholders [IA: ...]
 
     prompt = f"""Você é um assistente médico eficiente. Preencha o seguinte modelo de admissão hospitalar com as informações fornecidas sobre o caso do paciente.
-Se alguma informação específica para um campo não for fornecida no texto do caso, deixe o campo correspondente em branco ou com a marcação original do template.
+Se alguma informação específica para um campo não for fornecida no texto do caso, deixe o campo correspondente em branco.
 É crucial não inventar (alucinar) informações que não estão presentes no texto fornecido.
+Após cada campo preenchido (ex: #HD: texto), adicione uma linha em branco antes do próximo campo (ex: #AP:).
 
 Informações do caso:
 ---
@@ -679,6 +672,7 @@ O resumo deve incluir:
 2. Breve resumo de como o(s) diagnóstico(s) foi(ram) estabelecido(s) (exames chave, achados).
 3. Principais tratamentos realizados durante a internação.
 4. Condições do paciente no momento da alta hospitalar.
+Adicione uma linha em branco entre cada parágrafo.
 
 Última Evolução:
 ---
@@ -693,6 +687,7 @@ def gerar_orientacoes_alta_ia(caso_paciente):
 Para orientações de alta, você utiliza uma linguagem clara e direta e evita jargão médico.
 
 Com base no caso do paciente descrito abaixo (diagnóstico e antecedentes), gere orientações de alta pertinentes sobre sinais e sintomas de alerta que indicariam a necessidade de retornar ao Pronto-Socorro.
+Apresente as orientações em formato de lista, com cada item iniciando com um hífen. Adicione uma linha em branco entre cada item da lista.
 
 Caso do Paciente:
 ---
@@ -704,6 +699,23 @@ Orientações de Alta (Sinais de Alerta para Retorno ao PS):
 
 # --- Função Principal de Análise de Exames (parse_lab_report) ---
 def parse_lab_report(text):
+    # Função para anonimizar nomes
+    def anonimizar_nome(match):
+        nome_completo = match.group(0)
+        partes_nome = nome_completo.split()
+        if len(partes_nome) > 1: # Garante que há pelo menos nome e sobrenome
+            iniciais = [p[0] + "." for p in partes_nome]
+            return " ".join(iniciais)
+        return nome_completo # Retorna original se não for um nome típico
+
+    # Regex para encontrar nomes próprios (pode precisar de ajustes para maior precisão/abrangência)
+    # Este regex tenta pegar sequências de palavras capitalizadas, comum em nomes.
+    # Exclui algumas palavras comuns capitalizadas que não são nomes (DR, DRA, SR, SRA, etc.)
+    # e palavras totalmente em maiúsculas (como siglas).
+    padrao_nome = r"\b(?!DR|DRA|SR|SRA|DO|DA|DE|DOS|DAS\b)([A-ZÀ-Ú][a-zà-ú]+(?:\s+[A-ZÀ-Ú][a-zà-ú]+)+)\b"
+    text = re.sub(padrao_nome, anonimizar_nome, text)
+
+
     subs = [("ur[eé]ia","Ureia"),("pot[aá]ssio","Potássio"),("s[oó]dio","Sódio"),
             ("c[aá]lcio i[oô]nico","Cálcio Iônico"),("magn[eé]sio","Magnésio"),
             ("Creatinina(?!\s*Kinase|\s*quinase)","Creatinina ")] 
@@ -721,7 +733,7 @@ def parse_lab_report(text):
                                      "MARCADORES_INFLAM_CARD", "HEPATOGRAMA_PANCREAS", "MEDICAMENTOS", "GASOMETRIA", 
                                      "URINA_I", "SOROLOGIAS", "CULTURAS", "OUTROS"]}
 
-    if all_res.get("datetime"): out_sections["HEADER"].append(all_res["datetime"])
+  if all_res.get("datetime"): out_sections["HEADER"].append(all_res["datetime"])
 
     for k, lbl in [("Hb","Hb"),("Ht","Ht"),("VCM","VCM"),("HCM","HCM"),("CHCM","CHCM"),("RDW","RDW")]:
         if all_res.get(k): out_sections["HEMOGRAMA"].append(format_value_with_alert(lbl, all_res[k], k))
@@ -815,11 +827,11 @@ Cole o texto do exame laboratorial no campo abaixo.
 A formatação da saída busca ser concisa para prontuários. Valores alterados são marcados com `*` e críticos com `(!)`.
 """)
 
-# Avisos sobre API Key (se necessário, após set_page_config)
+# Avisos sobre API Key (somente se a chave não for de 'secrets' e não estiver definida localmente)
 if not GOOGLE_API_KEY and api_key_source != "secrets": 
     st.warning("Chave da API do Google não configurada para desenvolvimento local. Funcionalidades de IA estarão desabilitadas. Defina-a na variável `GOOGLE_API_KEY_LOCAL_FALLBACK` no código ou como variável de ambiente `GOOGLE_API_KEY`.")
-elif GOOGLE_API_KEY and not gemini_available: 
-     st.error(st.session_state.get("gemini_config_error", "Erro desconhecido ao configurar a API do Gemini. Funcionalidades de IA desabilitadas."))
+elif GOOGLE_API_KEY and not gemini_available and 'gemini_config_error' in st.session_state: 
+     st.error(st.session_state.gemini_config_error)
 
 
 # Inicialização do estado da sessão para IA
@@ -1031,7 +1043,8 @@ with tab2: # Aba do Agente IA
                     st.warning("Por favor, descreva o caso do paciente.")
             if st.session_state.ia_output_orientacoes_alta:
                 st.markdown("---"); st.subheader("Orientações de Alta (Geradas pela IA):")
-                st.markdown(st.session_state.ia_output_orientacoes_alta) 
+
+st.markdown(st.session_state.ia_output_orientacoes_alta) 
                 components.html(f"""<textarea id="cClipOrientAlta" style="opacity:0;position:absolute;left:-9999px;top:-9999px;">{st.session_state.ia_output_orientacoes_alta.replace("'", "&apos;").replace('"',"&quot;")}</textarea><button onclick="var t=document.getElementById('cClipOrientAlta');t.select();t.setSelectionRange(0,99999);try{{var s=document.execCommand('copy');var m=document.createElement('div');m.textContent=s?'Orientações copiadas!':'Falha.';m.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);padding:10px 20px;background-color:'+(s?'#28a745':'#dc3545')+';color:white;border-radius:5px;z-index:1000;';document.body.appendChild(m);setTimeout(function(){{document.body.removeChild(m);}},2000);}}catch(e){{alert('Não foi possível copiar.');}}" style="padding:10px 15px;background-color:#007bff;color:white;border:none;border-radius:5px;cursor:pointer;width:100%;margin-top:10px;">📋 Copiar Orientações de Alta</button>""", height=65)
                 if st.button("Limpar Orientações de Alta", key="btn_clear_ia_orientacoes_alta"):
                     st.session_state.ia_output_orientacoes_alta = ""; st.rerun()
@@ -1040,4 +1053,3 @@ with tab2: # Aba do Agente IA
 # Rodapé comum
 st.markdown("---")
 st.caption("Este aplicativo é uma ferramenta de auxílio e não substitui a análise crítica e o julgamento clínico profissional. Verifique sempre os resultados e a formatação final antes de usar em prontuários.")
-
