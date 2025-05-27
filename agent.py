@@ -583,7 +583,7 @@ template_evolucao = f"""# UNIDADE DE INTERNAÇÃO - EVOLUÇÃO#
 #DATA PROVÁVEL DA ALTA: [IA: Estime se houver informações suficientes. Caso contrário, mantenha 'SEM PREVISÃO' ou indique que depende da evolução.]
 """
 
-    prompt = f"""Você é um médico hospitalista experiente.
+prompt = f"""Você é um médico hospitalista experiente.
 Sua tarefa é gerar uma nota de EVOLUÇÃO MÉDICA para HOJE.
 MANTENHA OS SEGUINTES CAMPOS EXATAMENTE COMO ESTÃO NA 'Evolução Anterior Original', A MENOS QUE HAJA INFORMAÇÃO CONTRADITÓRIA DIRETA NOS 'Novos dados e observações do médico para a evolução de HOJE' que claramente substitua o conteúdo anterior:
 #CUIDADOS PALIATIVOS, #ID, #HD, #AP, #HDA, #MUC, #ALERGIAS, #ATB, #TEV.
