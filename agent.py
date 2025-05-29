@@ -1169,4 +1169,4 @@ with tab2: # Aba do Agente IA
 
 # Rodapé comum
 st.markdown("---")
-st.caption("Este aplicativo é uma ferramenta de auxílio e não substitui a análise crítica e o julgamento clínico profissional. Verifique sempre os resultados e a formatação final antes de usar em prontuários
+st.caption("Este aplicativo é uma ferramenta de auxílio e não substitui a análise crítica e o julgamento clínico profissional. Verifique sempre os resultados e a formatação final antes de usar em prontuários")
