@@ -190,13 +190,18 @@ def anonimizar_texto(texto):
 # --- Funções de Extração Específicas ---
 def extract_datetime_info(lines):
     for line in lines:
-        m_specific = re.search(r"Data de Coleta/Recebimento:\s*(\d{2}/\d{2}/\d{4}),\s*Hora Aproximada:\s*(\d{2}:\d{2}).*?", line, re.IGNORECASE)
+        # Regex para o formato específico: "Data de Coleta/Recebimento: DD/MM/AAAA, Hora Aproximada: HH:MM BRT"
+        # Ajustado para capturar a data e hora corretamente e permitir texto opcional no final (como BRT)
+        m_specific = re.search(r"Data de Coleta/Recebimento:\s*(\d{2}/\d{2}/\d{4}),\s*Hora Aproximada:\s*(\d{2}:\d{2})(?:\s*\w+)?", line, re.IGNORECASE)
         if m_specific:
-            date_part = m_specific.group(1)
-            time_part = m_specific.group(2)
-            day_month_match = re.match(r"(\d{2}/\d{2})", date_part)
+            date_part_full = m_specific.group(1)  # DD/MM/AAAA
+            time_part = m_specific.group(2)  # HH:MM
+            # Extrai apenas DD/MM da data_part_full
+            day_month_match = re.match(r"(\d{2}/\d{2})", date_part_full)
             if day_month_match:
                 return f"{day_month_match.group(1)} {time_part.replace(':', 'h')}"
+        
+        # Fallback para o padrão genérico se o específico não for encontrado
         m_generic = re.search(r"(data|coleta|recebimento)[:\s]*(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})?[^0-9]*(\d{1,2}[:hH]\d{1,2})?", line, re.IGNORECASE)
         if m_generic:
             date_str, time_str = m_generic.group(2), m_generic.group(3)
@@ -514,13 +519,9 @@ def gerar_resposta_ia(prompt_text):
         ]
         response = gemini_model.generate_content(prompt_text, safety_settings=safety_settings)
         
-        # Pós-processamento para garantir linhas em branco e remover placeholders da IA
         processed_text = response.text
+        processed_text = re.sub(r"\[IA:[^\]]*?\]", "", processed_text) 
         
-        # Remove placeholders como "[IA: ...]"
-        processed_text = re.sub(r"\[IA:[^\]]*?\]", "", processed_text) # Tornar o .*? não guloso
-        
-        # Garante linha em branco após cada header principal
         headers_para_espaco = [
             "#CUIDADOS PALIATIVOS:", "#ID:", "#HD:", "#AP:", "#HDA:", "#MUC:", 
             "#ALERGIAS:", "#ATB:", "#TEV:", "#EXAMES:", "#EVOLUÇÃO:", 
@@ -531,19 +532,13 @@ def gerar_resposta_ia(prompt_text):
         lines_response = processed_text.splitlines()
         for i, line in enumerate(lines_response):
             final_lines_with_spacing.append(line)
-            # Verifica se a linha atual é um header que precisa de espaço depois
-            # e se a próxima linha não é já uma linha em branco ou outro header
-            # E se a linha atual não está vazia (para não adicionar duas linhas em branco se a IA já adicionou uma)
             if line.strip() and any(line.strip().startswith(h) for h in headers_para_espaco):
                 if i + 1 < len(lines_response):
                     if lines_response[i+1].strip() != "" and not lines_response[i+1].strip().startswith("#"):
-                        final_lines_with_spacing.append("") # Adiciona linha em branco
-                elif i + 1 == len(lines_response): # Se for a última linha e é um header
+                        final_lines_with_spacing.append("") 
+                elif i + 1 == len(lines_response): 
                      final_lines_with_spacing.append("")
 
-
-        # Remove linhas em branco duplicadas que podem ter sido adicionadas
-        # e garante que não haja mais de uma linha em branco consecutiva
         cleaned_final_lines = []
         previous_line_was_blank = False
         for line in final_lines_with_spacing:
@@ -553,8 +548,7 @@ def gerar_resposta_ia(prompt_text):
             previous_line_was_blank = is_current_line_blank
         
         processed_text = "\n".join(cleaned_final_lines)
-
-        return anonimizar_texto(processed_text) # Anonimiza nomes na saída da IA
+        return anonimizar_texto(processed_text)
     except Exception as e:
         return f"Erro ao comunicar com a API do Gemini: {e}"
 
@@ -577,7 +571,7 @@ Sua análise (Resumo, Pontos de Discussão, Exame Físico a Avaliar, Sugestões 
 def evoluir_paciente_enfermaria_ia_fase2(resumo_ia_fase1, dados_medico_hoje, evolucao_anterior_original):
     linhas_evol_anterior = evolucao_anterior_original.splitlines()
     campos_fixos_dict = {}
-    hda_keys = {"#HDA:", "#HMA:", "#HPMA:"}
+    hda_keys = {"#HDA:", "#HMA:", "#HPMA:"} # Adicionado para unificar HDA
     campos_para_manter_padronizados = {"#ID:", "#HD:", "#AP:", "#HDA:", "#MUC:", "#ALERGIAS:", "#ATB:", "#TEV:"}
     
     current_field_content = []
@@ -587,18 +581,22 @@ def evoluir_paciente_enfermaria_ia_fase2(resumo_ia_fase1, dados_medico_hoje, evo
         linha_strip = linha.strip()
         matched_label_original = None
         matched_label_padronizado = None
+        
+        # Prioriza a checagem das variações de HDA
         for hda_var in hda_keys:
             if linha_strip.startswith(hda_var):
                 matched_label_original = hda_var
-                matched_label_padronizado = "#HDA:" 
+                matched_label_padronizado = "#HDA:" # Padroniza para #HDA:
                 break
-        if not matched_label_original:
+        
+        if not matched_label_original: # Se não for HDA, HMA ou HPMA, checa outros labels fixos
             for label_fixo in campos_para_manter_padronizados:
                 if label_fixo != "#HDA:" and linha_strip.startswith(label_fixo): 
                     matched_label_original = label_fixo
                     matched_label_padronizado = label_fixo
                     break
-        if linha_strip.startswith("#CUIDADOS PALIATIVOS:"):
+        
+        if linha_strip.startswith("#CUIDADOS PALIATIVOS:"): # Trata Cuidados Paliativos separadamente
             matched_label_original = "#CUIDADOS PALIATIVOS:"
             matched_label_padronizado = "#CUIDADOS PALIATIVOS:"
 
@@ -632,14 +630,16 @@ def evoluir_paciente_enfermaria_ia_fase2(resumo_ia_fase1, dados_medico_hoje, evo
 
     template_evolucao_parts = ["# UNIDADE DE INTERNAÇÃO - EVOLUÇÃO#\n"]
     cuidados_paliativos_texto = campos_fixos_dict.get("#CUIDADOS PALIATIVOS:", "")
-    if cuidados_paliativos_texto and cuidados_paliativos_texto.lower().strip() not in ["não", "nao", "no", "", "n", "negativo", "ausente", "nada digno de nota", "ndn"]:
+    # Condição para incluir Cuidados Paliativos
+    if cuidados_paliativos_texto and cuidados_paliativos_texto.lower().strip() not in ["não", "nao", "no", "", "n", "negativo", "ausente", "nada digno de nota", "ndn", "0", "zero"]:
         template_evolucao_parts.append(f"#CUIDADOS PALIATIVOS: {cuidados_paliativos_texto}\n\n")
     
+    # Garante que HDA (que pode ter vindo de HMA/HPMA) seja usado
     for label in ["#ID:", "#HD:", "#AP:", "#HDA:", "#MUC:", "#ALERGIAS:", "#ATB:", "#TEV:"]:
         template_evolucao_parts.append(f"{label} {campos_fixos_dict.get(label, '')}\n\n")
 
     template_evolucao_parts.append(f"#EXAMES:\n{exames_bloco_anterior_str}\n[NOVOS EXAMES AQUI]\n\n")
-    template_evolucao_parts.append("#EVOLUÇÃO:\n[NARRATIVA DO DIA AQUI]\n\n")
+    template_evolucao_parts.append("#EVOLUÇÃO:\n\n") # Removido placeholder para IA preencher diretamente
     template_evolucao_parts.append("#EXAME FÍSICO:\n[EXAME FÍSICO ATUALIZADO AQUI, ITENS COM HÍFEN]\n\n")
     template_evolucao_parts.append("#PLANO TERAPÊUTICO:\n[PLANO EM ITENS COM HÍFEN AQUI]\n\n")
     template_evolucao_parts.append("#CONDUTA:\n[CONDUTA EM PRIMEIRA PESSOA E ITENS COM HÍFEN AQUI]\n\n")
@@ -1108,5 +1108,4 @@ with tab2: # Aba do Agente IA
 
 # Rodapé comum
 st.markdown("---")
-st.caption("Este aplicativo é uma ferramenta de auxílio e não substitui a análise crítica e o julgamento clínico profissional. Verifique sempre os resultados e a formatação final antes de usar em prontuários.")
-
+st.caption("Este aplicativo é uma ferramenta de auxílio e não substitui a análise crítica e o julgamento clínico profissional. Verifique sempre os resultados e a formatação final antes de usar em prontuários
