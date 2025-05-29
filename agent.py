@@ -504,7 +504,7 @@ def process_single_culture_block(block_lines, germe_regex):
 def gerar_resposta_ia(prompt_text):
     if not gemini_available or not gemini_model:
         return "Funcionalidade de IA indisponível. Verifique a configuração da API Key."
-    try
+    try:
         # Adicionando configurações de segurança para evitar bloqueios comuns
         safety_settings = [
             {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
