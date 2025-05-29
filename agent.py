@@ -400,59 +400,77 @@ def extract_gasometria(lines):
     results = {}
     exam_prefix = ""
     gas_idx = -1 
+    gas_header_line_content = "" # Para guardar a linha do header
 
     for i, line in enumerate(lines):
         l_line = line.lower()
         if "gasometria arterial" in l_line:
             exam_prefix = "GA_"
             gas_idx = i
+            gas_header_line_content = line # Guarda a linha do header
             break
         elif "gasometria venosa" in l_line:
             exam_prefix = "GV_"
             gas_idx = i
+            gas_header_line_content = line # Guarda a linha do header
             break
     
-    if gas_idx == -1: 
+    if gas_idx == -1: # Fallback se o header completo não for encontrado
         for i, line in enumerate(lines):
-            if "gasometria" in line.lower():
+            l_line = line.lower()
+            if "gasometria" in l_line: # Procura por "gasometria" de forma mais genérica
                 gas_idx = i 
-                if "arterial" in line.lower(): exam_prefix = "GA_"
-                elif "venosa" in line.lower(): exam_prefix = "GV_"
-                # Se não especificar arterial/venosa, exam_prefix continua ""
+                gas_header_line_content = line
+                if "arterial" in l_line: exam_prefix = "GA_"
+                elif "venosa" in l_line: exam_prefix = "GV_"
                 break 
     
     if gas_idx == -1: 
         return results
 
     gas_map = {
-        "ph": "pH_gas", "pco2": "pCO2_gas", "hco3": "HCO3_gas", 
-        "bicarbonato": "HCO3_gas", "excesso de bases": "BE_gas", "be": "BE_gas", 
-        "po2": "pO2_gas", "saturação de o2": "SatO2_gas", "sato2": "SatO2_gas",
-        "lactato": "Lac_gas", "conteúdo de co2": "cCO2_gas"
+        "ph": "pH_gas",
+        "pco2": "pCO2_gas",
+        "hco3": "HCO3_gas",
+        "bicarbonato": "HCO3_gas",
+        "excesso de bases": "BE_gas",
+        "be": "BE_gas",
+        "po2": "pO2_gas",
+        "saturação de o2": "SatO2_gas",
+        "sato2": "SatO2_gas",
+        "lactato": "Lac_gas",
+        "conteúdo de co2": "cCO2_gas"
     }
                
-    # Itera pelas linhas A PARTIR da linha do header da gasometria
-    for line_num in range(gas_idx, min(gas_idx + len(gas_map) + 10, len(lines))): 
-        current_line = lines[line_num]
-        l_curr_line = current_line.lower().strip()
+    # Itera pelas linhas A PARTIR da linha SEGUINTE ao header da gasometria
+    # Aumenta a janela de busca um pouco, caso haja linhas de formatação
+    for line_num in range(gas_idx + 1, min(gas_idx + len(gas_map) + 15, len(lines))): 
+        current_line = lines[line_num].strip() # Remove espaços no início/fim da linha
+        l_curr_line = current_line.lower()
 
-        if line_num > gas_idx and any(hdr in l_curr_line for hdr in ["hemograma", "coagulograma", "bioquimica", "cultura", "urina tipo i"]):
-            break # Sai se encontrar outro tipo de exame
+        # Se encontrarmos um header de outro exame principal, ou uma linha vazia, ou uma linha de assinatura, paramos.
+        if not current_line or \
+           any(hdr in l_curr_line for hdr in ["hemograma", "coagulograma", "bioquimica", "cultura", "urina tipo i", "assinado eletronicamente", "responsável:"]):
+            break
 
         for label_search, out_key in gas_map.items():
             if out_key not in results: 
-                # Padrão: label (pode ter espaços antes), seguido por separadores e o valor
-                pattern = r"^\s*" + re.escape(label_search) + r"(?:\s|[:.-])+\s*" + GAS_NUM_PATTERN
+                # Padrão: label no início da linha (após espaços), seguido por quaisquer caracteres não numéricos, depois o valor
+                # O \b no final do label_search garante que estamos pegando a palavra inteira
+                pattern = r"^\s*" + re.escape(label_search) + r"\b[^\d<>-]*" + GAS_NUM_PATTERN
                 match = re.search(pattern, current_line, re.IGNORECASE)
                 if match:
                     results[out_key] = match.group(1) 
-                    break # Assume um parâmetro por linha, vai para a próxima linha
+                    # Não usar break aqui, pois um label como "lactato" pode aparecer antes de "lactato arterial"
+                    # Mas como os labels do gas_map são únicos para os valores que queremos, um break aqui é ok
+                    # para otimizar e ir para a próxima linha do arquivo.
+                    break # Encontrou o parâmetro nesta linha, vai para a próxima linha do arquivo
     
     if exam_prefix:
         return {exam_prefix + k: v for k, v in results.items()}
     elif results: 
         return results 
-    return {} 
+    return {}
 
 
 def extract_sorologias(lines):
