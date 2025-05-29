@@ -189,7 +189,7 @@ def anonimizar_texto(texto):
 
 # --- Funções de Extração Específicas ---
 def extract_datetime_info(lines):
-    # Procura primeiro pelo formato mais específico
+    # Primeiro, tenta o padrão mais específico em todas as linhas
     for line in lines:
         m_specific = re.search(
             r"Data de Coleta/Recebimento:\s*(\d{1,2}/\d{1,2}/\d{2,4}),\s*Hora Aproximada:\s*(\d{1,2}:\d{2})(?:\s+\w{2,4})?",
@@ -197,26 +197,23 @@ def extract_datetime_info(lines):
             re.IGNORECASE
         )
         if m_specific:
-            date_part_full = m_specific.group(1)  # Ex: 29/05/2025
-            time_part = m_specific.group(2)      # Ex: 04:58
+            date_part_full = m_specific.group(1)
+            time_part = m_specific.group(2)
             try:
-                # Usa dateutil.parser para normalizar a data completa e depois formata para DD/MM
                 dt_obj_date = date_parser.parse(date_part_full, dayfirst=True)
                 day_month = dt_obj_date.strftime("%d/%m")
-                # Garante que a hora tenha dois dígitos para horas e minutos
                 time_parts = time_part.split(':')
                 formatted_time = f"{time_parts[0].zfill(2)}h{time_parts[1].zfill(2)}"
                 return f"{day_month} {formatted_time}"
             except (ValueError, TypeError):
-                # Se o parsing da data completa falhar, tenta regex simples para DD/MM
                 day_month_match = re.match(r"(\d{1,2}/\d{1,2})", date_part_full)
                 if day_month_match:
                     time_parts = time_part.split(':')
                     formatted_time = f"{time_parts[0].zfill(2)}h{time_parts[1].zfill(2)}"
                     return f"{day_month_match.group(1)} {formatted_time}"
     
-    # Fallback para o padrão genérico se o específico não for encontrado
-    for line_idx, line in enumerate(lines[:20]): # Limita a busca do genérico para performance
+    # Fallback para o padrão genérico se o específico não for encontrado (limitado às primeiras 20 linhas)
+    for line_idx, line in enumerate(lines[:20]): 
         m_generic = re.search(
             r"(data|coleta|recebimento|realização)(?:[^0-9\n]*?)(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})?"
             r"(?:[^0-9\n]*?)(\d{1,2}[:hH]\d{1,2})",
@@ -239,14 +236,13 @@ def extract_datetime_info(lines):
             if ":" in formatted_time:
                 h_part, m_part = formatted_time.split(":")
                 formatted_time = f"{h_part.zfill(2)}h{m_part.zfill(2)}"
-            else: # Casos como HHMM
+            else: 
                 if len(formatted_time) == 4: formatted_time = f"{formatted_time[:2]}h{formatted_time[2:]}"
-                elif len(formatted_time) == 3: formatted_time = f"{formatted_time[0]}h{formatted_time[1:]}" # HMM
+                elif len(formatted_time) == 3: formatted_time = f"{formatted_time[0]}h{formatted_time[1:]}"
 
             if formatted_date and formatted_time: return f"{formatted_date} {formatted_time}"
-            elif formatted_time: # Se só achou a hora com este regex
-                 # Tenta buscar a data em linhas próximas
-                for look_back_idx in range(max(0, line_idx-1), line_idx +1 ): # Linha atual e anterior
+            elif formatted_time: 
+                for look_back_idx in range(max(0, line_idx-1), line_idx +1 ): 
                     date_only_match = re.search(r"(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})", lines[look_back_idx])
                     if date_only_match:
                         try:
@@ -254,7 +250,7 @@ def extract_datetime_info(lines):
                             formatted_date_only = dt_obj_date_only.strftime("%d/%m")
                             return f"{formatted_date_only} {formatted_time}"
                         except: continue
-                return formatted_time # Retorna só a hora se não achar data próxima
+                return formatted_time 
     return ""
 
 
@@ -403,9 +399,8 @@ def extract_medicamentos(lines):
 def extract_gasometria(lines):
     results = {}
     exam_prefix = ""
-    gas_idx = -1 # Índice da linha onde o header "Gasometria..." é encontrado
+    gas_idx = -1 
 
-    # Primeiro, encontrar o header da gasometria e determinar o tipo
     for i, line in enumerate(lines):
         l_line = line.lower()
         if "gasometria arterial" in l_line:
@@ -417,62 +412,47 @@ def extract_gasometria(lines):
             gas_idx = i
             break
     
-    if gas_idx == -1: # Se não encontrou header explícito, tenta encontrar só "gasometria"
+    if gas_idx == -1: 
         for i, line in enumerate(lines):
             if "gasometria" in line.lower():
-                gas_idx = i # Marca o início da possível seção
-                # Tenta inferir o tipo, mas pode ficar sem prefixo se não for claro
+                gas_idx = i 
                 if "arterial" in line.lower(): exam_prefix = "GA_"
                 elif "venosa" in line.lower(): exam_prefix = "GV_"
-                break # Pega a primeira ocorrência de "gasometria"
-
-    if gas_idx == -1: # Se não encontrou nenhuma menção a gasometria
+                # Se não especificar arterial/venosa, exam_prefix continua ""
+                break 
+    
+    if gas_idx == -1: 
         return results
 
-    # Labels e chaves correspondentes no dicionário de resultados
     gas_map = {
-        "ph": "pH_gas",
-        "pco2": "pCO2_gas",
-        "hco3": "HCO3_gas",
-        "bicarbonato": "HCO3_gas", # Alias
-        "excesso de bases": "BE_gas",
-        "be": "BE_gas", # Alias
-        "po2": "pO2_gas",
-        "saturação de o2": "SatO2_gas",
-        "sato2": "SatO2_gas", # Alias
-        "lactato": "Lac_gas", # Para lactato na gasometria
-        "conteúdo de co2": "cCO2_gas"
+        "ph": "pH_gas", "pco2": "pCO2_gas", "hco3": "HCO3_gas", 
+        "bicarbonato": "HCO3_gas", "excesso de bases": "BE_gas", "be": "BE_gas", 
+        "po2": "pO2_gas", "saturação de o2": "SatO2_gas", "sato2": "SatO2_gas",
+        "lactato": "Lac_gas", "conteúdo de co2": "cCO2_gas"
     }
-
-    # Itera pelas linhas A PARTIR da linha do header da gasometria (ou onde "gasometria" foi encontrado)
-    # Limita a busca a um número razoável de linhas após o header
-    for line_num in range(gas_idx, min(gas_idx + len(gas_map) + 5, len(lines))):
+               
+    # Itera pelas linhas A PARTIR da linha do header da gasometria
+    for line_num in range(gas_idx, min(gas_idx + len(gas_map) + 10, len(lines))): 
         current_line = lines[line_num]
-        # Se encontrarmos um header de outro exame principal, assumimos que a seção de gasometria terminou
-        if line_num > gas_idx and any(hdr in current_line.lower() for hdr in ["hemograma", "coagulograma", "bioquimica", "cultura", "urina tipo i"]):
-            break
+        l_curr_line = current_line.lower().strip()
+
+        if line_num > gas_idx and any(hdr in l_curr_line for hdr in ["hemograma", "coagulograma", "bioquimica", "cultura", "urina tipo i"]):
+            break # Sai se encontrar outro tipo de exame
 
         for label_search, out_key in gas_map.items():
-            if out_key not in results: # Extrai apenas uma vez por parâmetro
-                # Padrão: label no início da linha (após espaços), seguido por quaisquer caracteres não numéricos, depois o valor
-                # Ex: "pH         7,42", "pCO2:  40.0", "Excesso de Bases ..... 1,3"
-                # O \s* no início permite variação de espaços antes do label.
-                # [^\d<>-]* permite qualquer coisa entre o label e o número, exceto o início de outro número
-                pattern = r"^\s*" + re.escape(label_search) + r"[^\d<>-]*" + GAS_NUM_PATTERN
+            if out_key not in results: 
+                # Padrão: label (pode ter espaços antes), seguido por separadores e o valor
+                pattern = r"^\s*" + re.escape(label_search) + r"(?:\s|[:.-])+\s*" + GAS_NUM_PATTERN
                 match = re.search(pattern, current_line, re.IGNORECASE)
                 if match:
-                    results[out_key] = match.group(1) # GAS_NUM_PATTERN é o grupo 1
-                    # Não usar 'continue' aqui, pois uma linha pode ter múltiplos parâmetros (raro, mas possível)
-                    # Melhor: uma vez que um label é encontrado e seu valor extraído, podemos ir para a próxima linha
-                    # No entanto, o formato do exemplo tem um parâmetro por linha.
-                    break # Quebra o loop interno (gas_map) e vai para a próxima linha do arquivo
+                    results[out_key] = match.group(1) 
+                    break # Assume um parâmetro por linha, vai para a próxima linha
     
-    # Adiciona prefixo se foi determinado
     if exam_prefix:
         return {exam_prefix + k: v for k, v in results.items()}
-    elif results: # Se encontrou valores de gaso mas sem prefixo claro
-        return results # Retorna sem prefixo
-    return {} # Retorna vazio se nada foi encontrado
+    elif results: 
+        return results 
+    return {} 
 
 
 def extract_sorologias(lines):
@@ -728,7 +708,7 @@ def evoluir_paciente_enfermaria_ia_fase2(resumo_ia_fase1, dados_medico_hoje, evo
         template_evolucao_parts.append(f"{label} {campos_fixos_dict.get(label, '')}\n\n")
 
     template_evolucao_parts.append(f"#EXAMES:\n{exames_bloco_anterior_str}\n[NOVOS EXAMES AQUI]\n\n")
-    template_evolucao_parts.append("#EVOLUÇÃO:\n[NARRATIVA DO DIA AQUI]\n\n")
+    template_evolucao_parts.append("#EVOLUÇÃO:\n\n") 
     template_evolucao_parts.append("#EXAME FÍSICO:\n[EXAME FÍSICO ATUALIZADO AQUI, ITENS COM HÍFEN]\n\n")
     template_evolucao_parts.append("#PLANO TERAPÊUTICO:\n[PLANO EM ITENS COM HÍFEN AQUI]\n\n")
     template_evolucao_parts.append("#CONDUTA:\n[CONDUTA EM PRIMEIRA PESSOA E ITENS COM HÍFEN AQUI]\n\n")
@@ -1214,5 +1194,4 @@ with tab2: # Aba do Agente IA
 
 # Rodapé comum
 st.markdown("---")
-st.caption("Este aplicativo é uma ferramenta de auxílio e não substitui a análise crítica e o julgamento clínico profissional. Verifique sempre os resultados e a formatação final antes de usar em prontuários.")
-
+st.caption("Este aplicativo é uma ferramenta de auxílio e não substitui a análise crítica e o julgamento clínico profissional. Verifique sempre os resultados e a formatação final antes de usar em prontuários")
