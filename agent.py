@@ -46,7 +46,7 @@ VALORES_REFERENCIA = {
     "LIP": {"max": 160},
     "Vanco": {"min": 15.0, "max": 20.0, "crit_low": 10.0, "crit_high": 25.0}, 
     "pH_gas": {"min": 7.35, "max": 7.45, "crit_low": 7.0, "crit_high": 7.8},
-    "pCO2_gas": {"min": 35.0, "max": 45.0, "crit_low": 20, "crit_high": 80}, # Ajustado conforme exemplo
+    "pCO2_gas": {"min": 35.0, "max": 45.0, "crit_low": 20, "crit_high": 80}, 
     "HCO3_gas": {"min": 21.0, "max": 28.0, "crit_low": 10, "crit_high": 40}, 
     "BE_gas": {"min": -3.0, "max": 3.0}, 
     "pO2_gas": {"min": 80.0, "max": 95.0}, 
@@ -189,30 +189,32 @@ def anonimizar_texto(texto):
 
 # --- Funções de Extração Específicas ---
 def extract_datetime_info(lines):
-    # Itera pelas primeiras linhas para encontrar a data/hora da coleta
-    for line_idx, line in enumerate(lines[:15]): # Limita a busca às primeiras 15 linhas
-        # Padrão específico para "Data de Coleta/Recebimento: DD/MM/AAAA, Hora Aproximada: HH:MM OPCIONAL_TEXTO"
+    for line in lines: # Verifica todas as linhas para o padrão específico primeiro
         m_specific = re.search(
-            r"Data de Coleta/Recebimento:\s*(\d{1,2}/\d{1,2}/\d{2,4}),\s*Hora Aproximada:\s*(\d{1,2}:\d{2})(?:\s+\w{2,4})?", 
-            line, 
+            r"Data de Coleta/Recebimento:\s*(\d{1,2}/\d{1,2}/\d{2,4}),\s*Hora Aproximada:\s*(\d{1,2}:\d{2})(?:\s+\w{2,4})?",
+            line,
             re.IGNORECASE
         )
         if m_specific:
-            date_part_full = m_specific.group(1)  # Ex: 29/05/2025
-            time_part = m_specific.group(2)      # Ex: 04:58
+            date_part_full = m_specific.group(1)
+            time_part = m_specific.group(2)
             try:
-                # Usa dateutil.parser para normalizar a data completa e depois formata para DD/MM
                 dt_obj_date = date_parser.parse(date_part_full, dayfirst=True)
                 day_month = dt_obj_date.strftime("%d/%m")
-                return f"{day_month} {time_part.replace(':', 'h')}"
+                # Garante que a hora tenha dois dígitos para horas e minutos
+                time_parts = time_part.split(':')
+                formatted_time = f"{time_parts[0].zfill(2)}h{time_parts[1].zfill(2)}"
+                return f"{day_month} {formatted_time}"
             except (ValueError, TypeError):
-                 # Se o parsing da data completa falhar, tenta pegar DD/MM com regex simples
+                # Fallback para regex simples se o parser falhar
                 day_month_match = re.match(r"(\d{1,2}/\d{1,2})", date_part_full)
                 if day_month_match:
-                    return f"{day_month_match.group(1)} {time_part.replace(':', 'h')}"
-        
-        # Fallback para um padrão mais genérico se o específico não for encontrado
-        # Procura por "data", "coleta", "recebimento" ou "realização" seguido de data e hora
+                    time_parts = time_part.split(':')
+                    formatted_time = f"{time_parts[0].zfill(2)}h{time_parts[1].zfill(2)}"
+                    return f"{day_month_match.group(1)} {formatted_time}"
+    
+    # Fallback para o padrão genérico se o específico não for encontrado
+    for line_idx, line in enumerate(lines[:20]): # Limita a busca do genérico
         m_generic = re.search(
             r"(data|coleta|recebimento|realização)(?:[^0-9\n]*?)(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})?"
             r"(?:[^0-9\n]*?)(\d{1,2}[:hH]\d{1,2})",
@@ -222,34 +224,26 @@ def extract_datetime_info(lines):
         if m_generic:
             date_str_generic = m_generic.group(2)
             time_str_generic = m_generic.group(3)
-            
             formatted_date = ""
             if date_str_generic:
                 try:
                     dt_obj_generic_date = date_parser.parse(date_str_generic, dayfirst=True)
                     formatted_date = dt_obj_generic_date.strftime("%d/%m")
                 except (ValueError, TypeError):
-                    # Tenta regex simples se o parser falhar
                     dm_match = re.match(r"(\d{1,2}[./-]\d{1,2})", date_str_generic)
                     if dm_match: formatted_date = dm_match.group(1).replace('.', '/').replace('-', '/')
-
+            
             formatted_time = time_str_generic.replace('h',':').replace('H',':')
-            # Garante que a hora tenha dois dígitos para minutos
             if ":" in formatted_time:
                 h_part, m_part = formatted_time.split(":")
                 formatted_time = f"{h_part.zfill(2)}h{m_part.zfill(2)}"
-            else: # Caso raro de não ter separador, mas o regex pegou
-                if len(formatted_time) == 4: # HHMM
-                    formatted_time = f"{formatted_time[:2]}h{formatted_time[2:]}"
-                elif len(formatted_time) == 3: # HMM
-                     formatted_time = f"{formatted_time[0]}h{formatted_time[1:]}"
+            else:
+                if len(formatted_time) == 4: formatted_time = f"{formatted_time[:2]}h{formatted_time[2:]}"
+                elif len(formatted_time) == 3: formatted_time = f"{formatted_time[0]}h{formatted_time[1:]}"
 
-
-            if formatted_date and formatted_time:
-                return f"{formatted_date} {formatted_time}"
-            elif formatted_time: # Se só achou a hora, mas não a data com esse regex
-                 # Tenta buscar a data em linhas próximas (mais genérico)
-                for look_back_idx in range(max(0, line_idx-1), line_idx +1 ): # Linha atual e anterior
+            if formatted_date and formatted_time: return f"{formatted_date} {formatted_time}"
+            elif formatted_time:
+                for look_back_idx in range(max(0, line_idx-1), line_idx +1 ):
                     date_only_match = re.search(r"(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})", lines[look_back_idx])
                     if date_only_match:
                         try:
@@ -257,7 +251,7 @@ def extract_datetime_info(lines):
                             formatted_date_only = dt_obj_date_only.strftime("%d/%m")
                             return f"{formatted_date_only} {formatted_time}"
                         except: continue
-                return formatted_time # Retorna só a hora se não achar data
+                return formatted_time 
     return ""
 
 
@@ -405,50 +399,71 @@ def extract_medicamentos(lines):
 
 def extract_gasometria(lines):
     results, exam_prefix, gas_idx = {}, "", -1
-    arterial_terms = ["gasometria arterial"] 
-    venous_terms = ["gasometria venosa"]
+    gas_header_found = False
 
     for i, line in enumerate(lines):
         l_line = line.lower()
-        # Procura por termos exatos primeiro
         if "gasometria arterial" in l_line: 
-            exam_prefix, gas_idx = "GA_", i; break
+            exam_prefix, gas_idx, gas_header_found = "GA_", i, True; break
         elif "gasometria venosa" in l_line: 
-            exam_prefix, gas_idx = "GV_", i; break
-        # Fallback para termos mais genéricos se os específicos não forem encontrados
-        elif "arterial" in l_line and "gasometria" in l_line: # Se "arterial" e "gasometria" estão na mesma linha
-             exam_prefix, gas_idx = "GA_", i; break
-        elif "venosa" in l_line and "gasometria" in l_line: # Se "venosa" e "gasometria" estão na mesma linha
-             exam_prefix, gas_idx = "GV_", i; break
+            exam_prefix, gas_idx, gas_header_found = "GV_", i, True; break
+    
+    if not gas_header_found: # Fallback se o header completo não for encontrado
+        for i, line in enumerate(lines):
+            l_line = line.lower()
+            if "gasometria" in l_line: # Procura por "gasometria" de forma mais genérica
+                gas_idx = i # Marca o início da possível seção de gasometria
+                # Tenta inferir arterial ou venosa por keywords na mesma linha ou próximas
+                if "arterial" in l_line: exam_prefix = "GA_"
+                elif "venosa" in l_line: exam_prefix = "GV_"
+                # Se não encontrar arterial/venosa explicitamente, o prefixo permanecerá "" (genérico)
+                gas_header_found = True
+                break 
+    
+    if not gas_header_found: # Se nem "gasometria" foi encontrado
+        return results
 
-    if gas_idx == -1: return results
 
     gas_map = {"ph":"pH_gas","pco2":"pCO2_gas","hco3":"HCO3_gas","bicarbonato":"HCO3_gas","excesso de bases":"BE_gas",
                "be":"BE_gas","po2":"pO2_gas","saturação de o2":"SatO2_gas","sato2":"SatO2_gas","lactato":"Lac_gas",
                "conteúdo de co2": "cCO2_gas"}
                
-    # Itera pelas linhas A PARTIR de onde a gasometria foi identificada
-    for line_num in range(gas_idx, min(gas_idx + len(gas_map) + 10, len(lines))): 
+    # Itera pelas linhas A PARTIR de onde a gasometria foi identificada (gas_idx)
+    # ou a partir do início se gas_idx não foi definido mas achamos os campos
+    start_search_line = gas_idx if gas_idx != -1 else 0
+    
+    for line_num in range(start_search_line, len(lines)): 
         curr_line = lines[line_num]
-        l_curr_line = curr_line.lower().strip() # .strip() para remover espaços no início/fim
+        l_curr_line = curr_line.lower().strip() 
+
+        # Se encontrarmos um header de outro exame principal, paramos de procurar gasometria
+        if line_num > start_search_line and any(hdr in l_curr_line for hdr in ["hemograma", "coagulograma", "bioquimica", "cultura", "urina tipo i"]):
+            break
 
         for lbl_srch, out_k in gas_map.items():
             if out_k not in results: 
-                # Tenta encontrar o label seguido por espaços/pontos/dois-pontos e o valor
-                # Ex: "pH 7,42", "pCO2: 40,0", "Excesso de Bases ..... 1,3"
-                # O (?:\s|[:.-]) significa espaço OU : OU . OU -
-                # O + depois significa um ou mais desses separadores.
-                # O \s* antes do GAS_NUM_PATTERN permite espaços entre o separador e o número.
+                # Regex para encontrar o label no início da linha (após espaços) seguido por separadores e o valor
                 pattern = r"^\s*" + re.escape(lbl_srch) + r"(?:\s|[:.-])+\s*" + GAS_NUM_PATTERN
                 match = re.search(pattern, curr_line, re.IGNORECASE)
                 if match:
-                    results[out_k] = match.group(1) # GAS_NUM_PATTERN é o grupo 1
-                    continue # Passa para o próximo label_search
+                    results[out_k] = match.group(1) 
+                    continue 
+                
+                # Fallback: Se o label não está no início, mas está na linha, seguido pelo valor
+                # Este é menos preciso e pode pegar valores errados se o formato for muito diferente
+                # Ex: "Resultado para pCO2 é 40.0"
+                # Não é ideal, mas pode pegar alguns casos. Priorizar o pattern acima.
+                # m_any = re.search(re.escape(lbl_srch) + r"[^\d\n<>-]*" + GAS_NUM_PATTERN, curr_line, re.IGNORECASE)
+                # if m_any:
+                #     results[out_k] = m_any.group(1) # GAS_NUM_PATTERN é o grupo 1
+                #     continue
     
+    # Adiciona prefixo apenas se foi determinado
     if exam_prefix:
         return {exam_prefix + k: v for k, v in results.items()}
-    else: 
-        return results
+    elif results: # Se encontrou valores de gaso mas sem prefixo claro
+        return results # Retorna sem prefixo
+    return {} # Retorna vazio se nada foi encontrado
 
 
 def extract_sorologias(lines):
@@ -906,13 +921,34 @@ def parse_lab_report(text):
         if all_res.get(k): out_sections["HEPATOGRAMA_PANCREAS"].append(format_value_with_alert(lbl, all_res[k], k))
 
     gas_pfx = next((p for p in ["GA_","GV_"] if any(k.startswith(p) for k in all_res)),"")
-    if gas_pfx:
-        gas_order = ["pH_gas", "pCO2_gas", "pO2_gas", "HCO3_gas", "BE_gas", "SatO2_gas", "Lac_gas", "cCO2_gas"]
-        for k_sfx in gas_order:
-            full_key = gas_pfx + k_sfx
-            if all_res.get(full_key):
-                display_label = gas_pfx + k_sfx.replace("_gas","") 
-                out_sections["GASOMETRIA"].append(format_value_with_alert(display_label, all_res[full_key], k_sfx))
+    if gas_pfx : # Se um prefixo (GA_ ou GV_) foi determinado em extract_gasometria
+        gas_header = "Gasometria Arterial: " if gas_pfx == "GA_" else "Gasometria Venosa: "
+        gas_params_output = []
+        gas_order_map = { 
+            "pH": "pH_gas", "pCO2": "pCO2_gas", "pO2": "pO2_gas", 
+            "HCO3": "HCO3_gas", "BE": "BE_gas", 
+            "SatO2": "SatO2_gas", "Lac": "Lac_gas", "cCO2": "cCO2_gas"
+        }
+        for display_label, dict_key_suffix in gas_order_map.items():
+            full_key_to_check = gas_pfx + dict_key_suffix # Ex: GA_pH_gas
+            if full_key_to_check in all_res:
+                gas_params_output.append(format_value_with_alert(display_label, all_res[full_key_to_check], dict_key_suffix))
+        if gas_params_output:
+            out_sections["GASOMETRIA"].append(gas_header + " // ".join(gas_params_output))
+    elif any("_gas" in k for k in all_res.keys()): # Se há dados de gaso mas sem prefixo claro
+        gas_header = "Gasometria: "
+        gas_params_output = []
+        gas_order_map = { 
+            "pH": "pH_gas", "pCO2": "pCO2_gas", "pO2": "pO2_gas", 
+            "HCO3": "HCO3_gas", "BE": "BE_gas", 
+            "SatO2": "SatO2_gas", "Lac": "Lac_gas", "cCO2": "cCO2_gas"
+        }
+        for display_label, dict_key_suffix in gas_order_map.items():
+            if dict_key_suffix in all_res: # Verifica a chave base sem prefixo
+                 gas_params_output.append(format_value_with_alert(display_label, all_res[dict_key_suffix], dict_key_suffix))
+        if gas_params_output:
+            out_sections["GASOMETRIA"].append(gas_header + " // ".join(gas_params_output))
+
 
     for k, lbl in [("U1_Nit","Nit"),("U1_Leuco","Leuco Ur"),("U1_Hem","Hem Ur")]:
         if all_res.get(k): out_sections["URINA_I"].append(f"{lbl} {all_res[k]}")
@@ -1169,4 +1205,5 @@ with tab2: # Aba do Agente IA
 
 # Rodapé comum
 st.markdown("---")
-st.caption("Este aplicativo é uma ferramenta de auxílio e não substitui a análise crítica e o julgamento clínico profissional. Verifique sempre os resultados e a formatação final antes de usar em prontuários")
+st.caption("Este aplicativo é uma ferramenta de auxílio e não substitui a análise crítica e o julgamento clínico profissional. Verifique sempre os resultados e a formatação final antes de usar em prontuários.")
+
