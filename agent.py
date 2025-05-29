@@ -22,9 +22,9 @@ VALORES_REFERENCIA = {
     "RDW": {"min": 11.6, "max": 14.0},
     "Leuco": {"min": 4000, "max": 10000, "crit_low": 1000, "crit_high": 30000},
     "Plaq": {"min": 150000, "max": 450000, "crit_low": 20000, "crit_high": 1000000},
-    "PCR": {"max": 0.30, "crit_high": 10.0}, # Ajustado conforme exemplo de PCR
+    "PCR": {"max": 0.30, "crit_high": 10.0}, 
     "U": {"min": 15, "max": 50},
-    "Cr": {"min": 0.50, "max": 1.30}, # Ajustado conforme exemplo de Creatinina
+    "Cr": {"min": 0.50, "max": 1.30}, 
     "eGFR": {"min": 90},
     "K": {"min": 3.5, "max": 5.1, "crit_low": 2.5, "crit_high": 6.5},
     "Na": {"min": 136, "max": 145, "crit_low": 120, "crit_high": 160},
@@ -47,13 +47,13 @@ VALORES_REFERENCIA = {
     "Vanco": {"min": 15.0, "max": 20.0, "crit_low": 10.0, "crit_high": 25.0}, 
     "pH_gas": {"min": 7.35, "max": 7.45, "crit_low": 7.0, "crit_high": 7.8},
     "pCO2_gas": {"min": 35, "max": 45, "crit_low": 20, "crit_high": 80},
-    "HCO3_gas": {"min": 21.0, "max": 28.0, "crit_low": 10, "crit_high": 40}, # Ajustado conforme exemplo
-    "BE_gas": {"min": -3.0, "max": 3.0}, # Excesso de Bases, conforme exemplo
-    "pO2_gas": {"min": 80.0, "max": 95.0}, # pO2 arterial, conforme exemplo
-    "SatO2_gas": {"min": 95.0, "max": 99.0}, # SatO2 arterial, conforme exemplo
-    "Lac_gas": {"max": 2.0, "crit_high": 4.0}, # Lactato da gaso (geralmente mmol/L)
-    "Lac": {"min": 0.50, "max": 1.60, "crit_high": 4.0}, # Lactato sérico (mmol/L), conforme exemplo
-    "cCO2_gas": {"min": 23.0, "max": 29.0} # Conteúdo de CO2, conforme exemplo
+    "HCO3_gas": {"min": 21.0, "max": 28.0, "crit_low": 10, "crit_high": 40}, 
+    "BE_gas": {"min": -3.0, "max": 3.0}, 
+    "pO2_gas": {"min": 80.0, "max": 95.0}, 
+    "SatO2_gas": {"min": 95.0, "max": 99.0}, 
+    "Lac_gas": {"max": 2.0, "crit_high": 4.0}, 
+    "Lac": {"min": 0.50, "max": 1.60, "crit_high": 4.0}, 
+    "cCO2_gas": {"min": 23.0, "max": 29.0} 
 }
 
 # --- Configuração da API Key do Gemini (Após st.set_page_config) ---
@@ -176,32 +176,37 @@ def anonimizar_texto(texto):
     def substituir_nome_por_iniciais(match):
         nome_completo = match.group(0)
         partes_nome = nome_completo.split()
-        if len(partes_nome) > 1 and all(p[0].isupper() for p in partes_nome) and not nome_completo.isupper() and not nome_completo.endswith(":"):
-            iniciais = [p[0] + "." for p in partes_nome]
+        # Verifica se tem pelo menos duas partes e se todas começam com maiúscula (indicativo de nome próprio)
+        # e não é tudo maiúsculo (para não pegar siglas como HDA) e não termina com ':' (para não pegar headers)
+        if len(partes_nome) > 1 and all(p[0].isupper() for p in partes_nome if p) and not nome_completo.isupper() and not nome_completo.endswith(":"):
+            iniciais = [p[0] + "." for p in partes_nome if p] # Garante que p não é uma string vazia
             return " ".join(iniciais)
         return nome_completo 
-    padrao_nome_geral = r"\b(?!DR\b|DRA\b|Dr\b|Dra\b|SR\b|SRA\b|Sr\b|Sra\b|DO\b|DA\b|DE\b|DOS\b|DAS\b)([A-ZÀ-Ú][a-zà-ú]+(?:\s+[dD][aeo]s?)?\s+([A-ZÀ-Ú][a-zà-ú]+)(?:\s+([A-ZÀ-Ú][a-zà-ú]+))?)\b"
-    padrao_nome_simples = r"\b([A-ZÀ-Ú][a-zà-ú]+(?:\s+[A-ZÀ-Ú][a-zà-ú]+)+)\b"
-    texto_anonimizado = re.sub(padrao_nome_geral, substituir_nome_por_iniciais, texto)
-    texto_anonimizado = re.sub(padrao_nome_simples, substituir_nome_por_iniciais, texto_anonimizado)
+    
+    # Padrão mais específico para nomes com "de", "da", "dos", "das" no meio
+    padrao_nome_composto = r"\b([A-ZÀ-Ú][a-zà-ú]+(?:\s+(?:de|da|do|dos|das)\s+[A-ZÀ-Ú][a-zà-ú]+)+)\b"
+    texto_anonimizado = re.sub(padrao_nome_composto, substituir_nome_por_iniciais, texto)
+
+    # Padrão geral para sequências de palavras capitalizadas (2 ou mais)
+    padrao_nome_geral = r"\b(?!DR\b|DRA\b|Dr\b|Dra\b|SR\b|SRA\b|Sr\b|Sra\b)([A-ZÀ-Ú][a-zà-ú]+(?:\s+[A-ZÀ-Ú][a-zà-ú]+)+)\b"
+    texto_anonimizado = re.sub(padrao_nome_geral, substituir_nome_por_iniciais, texto_anonimizado)
+    
     return texto_anonimizado
 
 # --- Funções de Extração Específicas ---
 def extract_datetime_info(lines):
-    # Tenta o padrão mais específico primeiro, que corresponde ao seu exemplo
     for line in lines:
-        m_original = re.search(r"Data de Coleta/Recebimento:\s*(\d{2}/\d{2}/\d{4}),\s*Hora Aproximada:\s*(\d{2}:\d{2})", line, re.IGNORECASE)
-        if m_original:
-            # Extrai DD/MM e HH:MM, depois formata
-            date_part = m_original.group(1) # DD/MM/AAAA
-            time_part = m_original.group(2) # HH:MM
-            # Pega apenas DD/MM da data_part
-            day_month_match = re.match(r"(\d{2}/\d{2})", date_part)
+        # Regex para o formato específico: "Data de Coleta/Recebimento: DD/MM/AAAA, Hora Aproximada: HH:MM BRT"
+        # O '.*?' no final permite qualquer texto após a hora (como BRT)
+        m_specific = re.search(r"Data de Coleta/Recebimento:\s*(\d{2}/\d{2}/\d{4}),\s*Hora Aproximada:\s*(\d{2}:\d{2}).*?", line, re.IGNORECASE)
+        if m_specific:
+            date_part = m_specific.group(1)  # DD/MM/AAAA
+            time_part = m_specific.group(2)  # HH:MM
+            day_month_match = re.match(r"(\d{2}/\d{2})", date_part) # Pega DD/MM
             if day_month_match:
-                return f"{day_month_match.group(1)} {time_part.replace(':','h')}"
-
-    # Fallback para o padrão genérico se o específico não for encontrado
-    for line in lines:
+                return f"{day_month_match.group(1)} {time_part.replace(':', 'h')}"
+        
+        # Fallback para o padrão genérico se o específico não for encontrado
         m_generic = re.search(r"(data|coleta|recebimento)[:\s]*(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})?[^0-9]*(\d{1,2}[:hH]\d{1,2})?", line, re.IGNORECASE)
         if m_generic:
             date_str, time_str = m_generic.group(2), m_generic.group(3)
@@ -209,8 +214,8 @@ def extract_datetime_info(lines):
             if full_dt_str:
                 try: 
                     dt_obj = date_parser.parse(full_dt_str.replace('h', ':'), dayfirst=True, fuzzy=True)
-                    return dt_obj.strftime("%d/%m %Hh%M") # Formato DD/MM HHhMM
-                except: pass # Ignora erros de parsing e continua
+                    return dt_obj.strftime("%d/%m %Hh%M") 
+                except: pass 
     return ""
 
 
@@ -509,7 +514,7 @@ def process_single_culture_block(block_lines, germe_regex):
 def gerar_resposta_ia(prompt_text):
     if not gemini_available or not gemini_model:
         return "Funcionalidade de IA indisponível. Verifique a configuração da API Key."
-    try:
+    try
         # Adicionando configurações de segurança para evitar bloqueios comuns
         safety_settings = [
             {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
@@ -654,7 +659,7 @@ def evoluir_paciente_enfermaria_ia_fase2(resumo_ia_fase1, dados_medico_hoje, evo
     for label in ["#ID:", "#HD:", "#AP:", "#HDA:", "#MUC:", "#ALERGIAS:", "#ATB:", "#TEV:"]:
         template_evolucao_parts.append(f"{label} {campos_fixos_dict.get(label, '')}\n\n")
 
-    template_evolucao_parts.append(f"#EXAMES:\n{exames_bloco_anterior_str}\n[NOVOS EXAMES AQUI]\n\n")
+    template_evolucao_parts.append(f"#EXAMES:\n{exames_bloco_anterior_str}\n[NOVOS EXAMES AQUI]\n\n") # Placeholder para IA
     template_evolucao_parts.append("#EVOLUÇÃO:\n[NARRATIVA DO DIA AQUI]\n\n")
     template_evolucao_parts.append("#EXAME FÍSICO:\n[EXAME FÍSICO ATUALIZADO AQUI, ITENS COM HÍFEN]\n\n")
     template_evolucao_parts.append("#PLANO TERAPÊUTICO:\n[PLANO EM ITENS COM HÍFEN AQUI]\n\n")
