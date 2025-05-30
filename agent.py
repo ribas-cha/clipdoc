@@ -371,40 +371,82 @@ def extract_marcadores_inflamatorios_cardiacos(lines):
 
 def extract_hepatograma_pancreas(lines):
     results = {}
-    tgo_val, tgp_val = "", ""
-    hepatograma_keywords = ["bilirrubina", "fosfatase alcalina", "gama-gt", "ggt", "albumina", 
-                            "transaminase", "ast", "alt", "tgo", "tgp"]
-    is_hepatograma_context = any(keyword in line.lower() for line in lines for keyword in hepatograma_keywords) 
     
-    if is_hepatograma_context:
-        for i, line in enumerate(lines):
-            if not tgo_val and "Transaminase oxalacética - TGO" in line:
-                for offset in range(1, 4): 
-                    if i + offset < len(lines):
-                        m = re.match(r"^\s*" + NUM_PATTERN + r"\s*U/L", lines[i+offset]) 
-                        if m: tgo_val = m.group(1); break
-                if not tgo_val and i + 2 < len(lines):
-                     m = re.search(NUM_PATTERN, lines[i+2])
-                     if m: tgo_val = m.group(1)
-            if not tgp_val and "Transaminase pirúvica - TGP" in line:
-                for offset in range(1, 4):
-                    if i + offset < len(lines):
-                        m = re.match(r"^\s*" + NUM_PATTERN + r"\s*U/L", lines[i+offset])
-                        if m: tgp_val = m.group(1); break
-                if not tgp_val and i + 2 < len(lines):
-                     m = re.search(NUM_PATTERN, lines[i+2])
-                     if m: tgp_val = m.group(1)
-            if tgo_val and tgp_val: break 
-        results["TGO"] = tgo_val
-        results["TGP"] = tgp_val
-        if not results["TGO"]: results["TGO"] = extract_labeled_value(lines, ["TGO", "AST", "Aspartato amino transferase"], label_must_be_at_start=False, search_window_lines=1, require_unit="U/L")
-        if not results["TGP"]: results["TGP"] = extract_labeled_value(lines, ["TGP", "ALT", "Alanina amino transferase"], label_must_be_at_start=False, search_window_lines=1, require_unit="U/L")
+    # TGO
+    tgo_val = ""
+    for i, line in enumerate(lines):
+        if "Transaminase oxalacética - TGO" in line or ("Aspartato amino transferase" in line and "TGO" in line):
+            # Tenta encontrar o valor nas próximas 3 linhas, priorizando linhas que começam com o número e U/L
+            for offset in range(1, 4): 
+                if i + offset < len(lines):
+                    target_line = lines[i + offset]
+                    match_ul = re.match(r"^\s*" + NUM_PATTERN + r"\s*U/L", target_line)
+                    if match_ul:
+                        tgo_val = match_ul.group(1)
+                        break
+            if tgo_val: break # Sai do loop principal se encontrou
+    if not tgo_val: # Fallback mais genérico se não encontrou com U/L
+        tgo_val = extract_labeled_value(lines, ["TGO", "AST"], label_must_be_at_start=False, search_window_lines=1, require_unit="U/L")
+    results["TGO"] = tgo_val
+
+    # TGP
+    tgp_val = ""
+    for i, line in enumerate(lines):
+        if "Transaminase pirúvica - TGP" in line or ("Alanina amino transferase" in line and "TGP" in line):
+            for offset in range(1, 4):
+                if i + offset < len(lines):
+                    target_line = lines[i + offset]
+                    match_ul = re.match(r"^\s*" + NUM_PATTERN + r"\s*U/L", target_line)
+                    if match_ul:
+                        tgp_val = match_ul.group(1)
+                        break
+            if tgp_val: break
+    if not tgp_val:
+        tgp_val = extract_labeled_value(lines, ["TGP", "ALT"], label_must_be_at_start=False, search_window_lines=1, require_unit="U/L")
+    results["TGP"] = tgp_val
+
+    # Outros exames do hepatograma e pâncreas
+    # Para GGT e FA, o valor está na mesma linha do label no seu exemplo
+    # Para Bilirrubinas, o valor está na mesma linha do label específico
     
-    for k, lbls in [("GGT", ["Gama-Glutamil Transferase","GGT"]), ("FA", "Fosfatase Alcalina"),
-                    ("BT", "Bilirrubina Total"), ("BD", "Bilirrubina Direta"), ("BI", "Bilirrubina Indireta"),
-                    ("ALB", "Albumina"), ("AML", "Amilase"), ("LIP", "Lipase")]:
-        if k not in results or not results[k]:
-            results[k] = extract_labeled_value(lines, lbls, label_must_be_at_start=True, search_window_lines=1)
+    # Gama-Glutamil Transferase (GGT)
+    results["GGT"] = extract_labeled_value(lines, ["Gama-Glutamil Transferase", "GGT"], label_must_be_at_start=True, search_window_lines=0, require_unit="U/L")
+    if not results["GGT"]: # Fallback se não começar com o label ou não tiver U/L
+         results["GGT"] = extract_labeled_value(lines, ["Gama-Glutamil Transferase", "GGT"], label_must_be_at_start=True, search_window_lines=0)
+
+
+    # Fosfatase Alcalina (FA)
+    results["FA"] = extract_labeled_value(lines, "Fosfatase Alcalina", label_must_be_at_start=True, search_window_lines=0, require_unit="U/L")
+    if not results["FA"]:
+        results["FA"] = extract_labeled_value(lines, "Fosfatase Alcalina", label_must_be_at_start=True, search_window_lines=0)
+
+    # Bilirrubinas
+    # O label principal é "Bilirrubinas Total, Direta e Indireta", os valores vêm depois com labels específicos
+    bilirrubina_section_found = False
+    bilirrubina_start_index = -1
+    for i, line in enumerate(lines):
+        if "bilirrubinas total, direta e indireta" in line.lower():
+            bilirrubina_section_found = True
+            bilirrubina_start_index = i
+            break
+    
+    if bilirrubina_section_found:
+        # Procura nas linhas seguintes à identificação da seção de bilirrubinas
+        search_lines_bilirrubinas = lines[bilirrubina_start_index:]
+        results["BT"] = extract_labeled_value(search_lines_bilirrubinas, "Bilirrubina Total", label_must_be_at_start=True, search_window_lines=1) # search_window_lines=1 permite valor na linha abaixo se necessário
+        results["BD"] = extract_labeled_value(search_lines_bilirrubinas, "Bilirrubina Direta", label_must_be_at_start=True, search_window_lines=1)
+        results["BI"] = extract_labeled_value(search_lines_bilirrubinas, "Bilirrubina Indireta", label_must_be_at_start=True, search_window_lines=1)
+    else: # Fallback se o header principal não for encontrado
+        results["BT"] = extract_labeled_value(lines, "Bilirrubina Total", label_must_be_at_start=True, search_window_lines=1)
+        results["BD"] = extract_labeled_value(lines, "Bilirrubina Direta", label_must_be_at_start=True, search_window_lines=1)
+        results["BI"] = extract_labeled_value(lines, "Bilirrubina Indireta", label_must_be_at_start=True, search_window_lines=1)
+
+
+    # Albumina, Amilase, Lipase (mantendo a lógica anterior)
+    results["ALB"] = extract_labeled_value(lines, "Albumina", label_must_be_at_start=True, search_window_lines=1)
+    results["AML"] = extract_labeled_value(lines, "Amilase", label_must_be_at_start=True, search_window_lines=1)
+    results["LIP"] = extract_labeled_value(lines, "Lipase", label_must_be_at_start=True, search_window_lines=1)
+            
     return results
 
 def extract_medicamentos(lines):
