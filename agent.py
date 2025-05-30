@@ -189,7 +189,7 @@ def anonimizar_texto(texto):
 
 # --- Funções de Extração Específicas ---
 def extract_datetime_info(lines):
-    # Primeiro, tenta o padrão mais específico em todas as linhas
+    # Prioriza o padrão mais específico em todas as linhas
     for line in lines:
         m_specific = re.search(
             r"Data de Coleta/Recebimento:\s*(\d{1,2}/\d{1,2}/\d{2,4}),\s*Hora Aproximada:\s*(\d{1,2}:\d{2})(?:\s+\w{2,4})?",
@@ -200,49 +200,64 @@ def extract_datetime_info(lines):
             date_part_full = m_specific.group(1)
             time_part = m_specific.group(2)
             try:
-                dt_obj_date = date_parser.parse(date_part_full, dayfirst=True)
+                dt_obj_date = date_parser.parse(date_part_full, dayfirst=True, fuzzy=False) # fuzzy=False para mais precisão
                 day_month = dt_obj_date.strftime("%d/%m")
-                time_parts = time_part.split(':')
-                formatted_time = f"{time_parts[0].zfill(2)}h{time_parts[1].zfill(2)}"
-                return f"{day_month} {formatted_time}"
+                time_parts_match = re.match(r"(\d{1,2}):(\d{2})", time_part)
+                if time_parts_match:
+                    h_part = time_parts_match.group(1).zfill(2)
+                    m_part = time_parts_match.group(2).zfill(2)
+                    return f"{day_month} {h_part}h{m_part}"
             except (ValueError, TypeError):
+                # Fallback se o parser falhar, tenta regex simples
                 day_month_match = re.match(r"(\d{1,2}/\d{1,2})", date_part_full)
                 if day_month_match:
-                    time_parts = time_part.split(':')
-                    formatted_time = f"{time_parts[0].zfill(2)}h{time_parts[1].zfill(2)}"
-                    return f"{day_month_match.group(1)} {formatted_time}"
+                    time_parts_match = re.match(r"(\d{1,2}):(\d{2})", time_part)
+                    if time_parts_match:
+                        h_part = time_parts_match.group(1).zfill(2)
+                        m_part = time_parts_match.group(2).zfill(2)
+                        return f"{day_month_match.group(1)} {h_part}h{m_part}"
     
-    # Fallback para o padrão genérico se o específico não for encontrado (limitado às primeiras 20 linhas)
+    # Fallback para padrões genéricos (limitado às primeiras ~20 linhas)
     for line_idx, line in enumerate(lines[:20]): 
+        # Padrão para "Data: DD/MM/YY HH:MM" ou "Coleta: DD.MM.YYYY HHhMM" etc.
         m_generic = re.search(
-            r"(data|coleta|recebimento|realização)(?:[^0-9\n]*?)(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})?"
-            r"(?:[^0-9\n]*?)(\d{1,2}[:hH]\d{1,2})",
+            r"(data|coleta|recebimento|realização)(?:[^0-9\n<>-]*?)(\d{1,2}[./-]\d{1,2}(?:[./-]\d{2,4})?)?" # Data opcional
+            r"(?:[^0-9\n<>-]*?)(\d{1,2}[:hH]\d{1,2})", # Hora
             line,
             re.IGNORECASE
         )
         if m_generic:
             date_str_generic = m_generic.group(2)
             time_str_generic = m_generic.group(3)
+            
             formatted_date = ""
             if date_str_generic:
                 try:
-                    dt_obj_generic_date = date_parser.parse(date_str_generic, dayfirst=True)
+                    dt_obj_generic_date = date_parser.parse(date_str_generic, dayfirst=True, fuzzy=True)
                     formatted_date = dt_obj_generic_date.strftime("%d/%m")
-                except (ValueError, TypeError):
+                except: # Tenta regex simples se o parser falhar
                     dm_match = re.match(r"(\d{1,2}[./-]\d{1,2})", date_str_generic)
                     if dm_match: formatted_date = dm_match.group(1).replace('.', '/').replace('-', '/')
             
-            formatted_time = time_str_generic.replace('h',':').replace('H',':')
-            if ":" in formatted_time:
-                h_part, m_part = formatted_time.split(":")
-                formatted_time = f"{h_part.zfill(2)}h{m_part.zfill(2)}"
-            else: 
-                if len(formatted_time) == 4: formatted_time = f"{formatted_time[:2]}h{formatted_time[2:]}"
-                elif len(formatted_time) == 3: formatted_time = f"{formatted_time[0]}h{formatted_time[1:]}"
+            # Formata a hora para HHhMM
+            cleaned_time_str = time_str_generic.replace('h',':').replace('H',':')
+            time_parts_match = re.match(r"(\d{1,2}):(\d{2})", cleaned_time_str)
+            formatted_time = ""
+            if time_parts_match:
+                h_part = time_parts_match.group(1).zfill(2)
+                m_part = time_parts_match.group(2).zfill(2)
+                formatted_time = f"{h_part}h{m_part}"
+            elif len(cleaned_time_str) == 4 and cleaned_time_str.isdigit(): # HHMM
+                formatted_time = f"{cleaned_time_str[:2]}h{cleaned_time_str[2:]}"
+            elif len(cleaned_time_str) == 3 and cleaned_time_str.isdigit(): # HMM
+                formatted_time = f"{cleaned_time_str[0].zfill(2)}h{cleaned_time_str[1:]}"
 
-            if formatted_date and formatted_time: return f"{formatted_date} {formatted_time}"
-            elif formatted_time: 
-                for look_back_idx in range(max(0, line_idx-1), line_idx +1 ): 
+
+            if formatted_date and formatted_time: 
+                return f"{formatted_date} {formatted_time}"
+            elif formatted_time: # Se só achou a hora com este regex
+                 # Tenta buscar a data em linhas próximas
+                for look_back_idx in range(max(0, line_idx-2), line_idx +1 ): # Linha atual e 2 anteriores
                     date_only_match = re.search(r"(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})", lines[look_back_idx])
                     if date_only_match:
                         try:
@@ -250,8 +265,9 @@ def extract_datetime_info(lines):
                             formatted_date_only = dt_obj_date_only.strftime("%d/%m")
                             return f"{formatted_date_only} {formatted_time}"
                         except: continue
-                return formatted_time 
-    return ""
+                # Se ainda não achou data, mas achou hora, retorna só a hora (menos ideal)
+                # return formatted_time 
+    return "" # Retorna vazio se nada for encontrado
 
 
 def extract_hemograma_completo(lines):
@@ -400,33 +416,36 @@ def extract_gasometria(lines):
     results = {}
     exam_prefix = ""
     gas_idx = -1 
-    gas_header_line_content = "" # Para guardar a linha do header
+    gas_header_found = False
 
+    # 1. Encontrar o header da gasometria e determinar o tipo (Arterial/Venosa)
     for i, line in enumerate(lines):
         l_line = line.lower()
         if "gasometria arterial" in l_line:
             exam_prefix = "GA_"
             gas_idx = i
-            gas_header_line_content = line # Guarda a linha do header
-            break
+            gas_header_found = True
+            break 
         elif "gasometria venosa" in l_line:
             exam_prefix = "GV_"
             gas_idx = i
-            gas_header_line_content = line # Guarda a linha do header
+            gas_header_found = True
             break
     
-    if gas_idx == -1: # Fallback se o header completo não for encontrado
+    # 1b. Fallback se o header completo (com Arterial/Venosa) não for encontrado
+    if not gas_header_found:
         for i, line in enumerate(lines):
             l_line = line.lower()
-            if "gasometria" in l_line: # Procura por "gasometria" de forma mais genérica
+            if "gasometria" in l_line: 
                 gas_idx = i 
-                gas_header_line_content = line
                 if "arterial" in l_line: exam_prefix = "GA_"
                 elif "venosa" in l_line: exam_prefix = "GV_"
+                # Se não especificar, exam_prefix continua "" (será tratado como genérico)
+                gas_header_found = True
                 break 
     
-    if gas_idx == -1: 
-        return results
+    if not gas_header_found: 
+        return results 
 
     gas_map = {
         "ph": "pH_gas",
@@ -442,35 +461,32 @@ def extract_gasometria(lines):
         "conteúdo de co2": "cCO2_gas"
     }
                
-    # Itera pelas linhas A PARTIR da linha SEGUINTE ao header da gasometria
-    # Aumenta a janela de busca um pouco, caso haja linhas de formatação
-    for line_num in range(gas_idx + 1, min(gas_idx + len(gas_map) + 15, len(lines))): 
-        current_line = lines[line_num].strip() # Remove espaços no início/fim da linha
-        l_curr_line = current_line.lower()
-
-        # Se encontrarmos um header de outro exame principal, ou uma linha vazia, ou uma linha de assinatura, paramos.
-        if not current_line or \
-           any(hdr in l_curr_line for hdr in ["hemograma", "coagulograma", "bioquimica", "cultura", "urina tipo i", "assinado eletronicamente", "responsável:"]):
+    # 2. Itera pelas linhas A PARTIR da linha SEGUINTE ao header da gasometria
+    # Aumentada a janela de busca para maior flexibilidade
+    for line_num in range(gas_idx + 1, min(gas_idx + 1 + len(gas_map) + 10, len(lines))): 
+        current_line = lines[line_num]
+        
+        # Condição de parada se encontrar header de outro exame ou linha de assinatura
+        if any(hdr in current_line.lower() for hdr in ["hemograma", "coagulograma", "bioquimica", "cultura", "urina tipo i", "assinado eletronicamente", "responsável:", "locais de execução"]):
             break
 
         for label_search, out_key in gas_map.items():
-            if out_key not in results: 
-                # Padrão: label no início da linha (após espaços), seguido por quaisquer caracteres não numéricos, depois o valor
-                # O \b no final do label_search garante que estamos pegando a palavra inteira
-                pattern = r"^\s*" + re.escape(label_search) + r"\b[^\d<>-]*" + GAS_NUM_PATTERN
+            if out_key not in results: # Processa cada parâmetro apenas uma vez
+                # Regex: Início da linha (^) opcionalmente com espaços (\s*), seguido pelo label (escapado),
+                # seguido por um ou mais separadores (espaço, :, ., -), seguido por espaços opcionais,
+                # e finalmente o valor numérico (GAS_NUM_PATTERN). Case-insensitive.
+                pattern = r"^\s*" + re.escape(label_search) + r"(?:[\s:.-]+)\s*" + GAS_NUM_PATTERN
                 match = re.search(pattern, current_line, re.IGNORECASE)
                 if match:
-                    results[out_key] = match.group(1) 
-                    # Não usar break aqui, pois um label como "lactato" pode aparecer antes de "lactato arterial"
-                    # Mas como os labels do gas_map são únicos para os valores que queremos, um break aqui é ok
-                    # para otimizar e ir para a próxima linha do arquivo.
-                    break # Encontrou o parâmetro nesta linha, vai para a próxima linha do arquivo
+                    results[out_key] = match.group(1) # GAS_NUM_PATTERN é o grupo 1
+                    # Assume um parâmetro por linha, então sai do loop interno para ir para a próxima linha
+                    break 
     
     if exam_prefix:
         return {exam_prefix + k: v for k, v in results.items()}
-    elif results: 
+    elif results: # Se encontrou valores de gaso mas sem prefixo claro
         return results 
-    return {}
+    return {} 
 
 
 def extract_sorologias(lines):
@@ -661,7 +677,8 @@ def evoluir_paciente_enfermaria_ia_fase2(resumo_ia_fase1, dados_medico_hoje, evo
     linhas_evol_anterior = evolucao_anterior_original.splitlines()
     campos_fixos_dict = {}
     hda_labels_map = {"#HDA:": "#HDA:", "#HMA:": "#HDA:", "#HPMA:": "#HDA:"}
-    campos_para_manter_padronizados = {"#ID:", "#HD:", "#AP:", "#HDA:", "#MUC:", "#ALERGIAS:", "#ATB:", "#TEV:"} 
+    # Inclui #CUIDADOS PALIATIVOS: aqui para que seja capturado na lógica de extração
+    campos_para_manter_padronizados = {"#CUIDADOS PALIATIVOS:", "#ID:", "#HD:", "#AP:", "#HDA:", "#MUC:", "#ALERGIAS:", "#ATB:", "#TEV:"} 
     
     current_field_content = []
     current_field_label_padronizado = None 
@@ -684,7 +701,7 @@ def evoluir_paciente_enfermaria_ia_fase2(resumo_ia_fase1, dados_medico_hoje, evo
                     matched_label_padronizado_para_este_header = label_fixo
                     break
         
-        if linha_strip.startswith("#CUIDADOS PALIATIVOS:"):
+        if linha_strip.startswith("#CUIDADOS PALIATIVOS:") and not matched_label_original : # Para não sobrescrever se já pegou por hda_keys
             matched_label_original = "#CUIDADOS PALIATIVOS:"
             matched_label_padronizado_para_este_header = "#CUIDADOS PALIATIVOS:"
 
@@ -715,18 +732,19 @@ def evoluir_paciente_enfermaria_ia_fase2(resumo_ia_fase1, dados_medico_hoje, evo
         elif capturando_exames and linha.strip().startswith("#"): capturando_exames = False 
         if capturando_exames: temp_exames_lines.append(linha)
     if temp_exames_lines: 
+        # Remove o header #EXAMES: do bloco antes de juntar
         exames_bloco_anterior_str = "\n".join([l.replace("#EXAMES:", "", 1).strip() for l in temp_exames_lines if l.strip() and l.strip() != "#EXAMES:"]).strip()
 
     template_evolucao_parts = ["# UNIDADE DE INTERNAÇÃO - EVOLUÇÃO#\n"]
     cuidados_paliativos_texto = campos_fixos_dict.get("#CUIDADOS PALIATIVOS:", "")
-    if cuidados_paliativos_texto and cuidados_paliativos_texto.lower().strip() not in ["não", "nao", "no", "", "n", "negativo", "ausente", "nada digno de nota", "ndn", "0", "zero"]:
+    if cuidados_paliativos_texto and cuidados_paliativos_texto.lower().strip() not in ["não", "nao", "no", "", "n", "negativo", "ausente", "nada digno de nota", "ndn", "0", "zero", "desconhecido", "ignorado"]:
         template_evolucao_parts.append(f"#CUIDADOS PALIATIVOS: {cuidados_paliativos_texto}\n\n")
     
     for label in ["#ID:", "#HD:", "#AP:", "#HDA:", "#MUC:", "#ALERGIAS:", "#ATB:", "#TEV:"]:
         template_evolucao_parts.append(f"{label} {campos_fixos_dict.get(label, '')}\n\n")
 
     template_evolucao_parts.append(f"#EXAMES:\n{exames_bloco_anterior_str}\n[NOVOS EXAMES AQUI]\n\n")
-    template_evolucao_parts.append("#EVOLUÇÃO:\n\n") 
+    template_evolucao_parts.append("#EVOLUÇÃO:\n[NARRATIVA DO DIA AQUI]\n\n")
     template_evolucao_parts.append("#EXAME FÍSICO:\n[EXAME FÍSICO ATUALIZADO AQUI, ITENS COM HÍFEN]\n\n")
     template_evolucao_parts.append("#PLANO TERAPÊUTICO:\n[PLANO EM ITENS COM HÍFEN AQUI]\n\n")
     template_evolucao_parts.append("#CONDUTA:\n[CONDUTA EM PRIMEIRA PESSOA E ITENS COM HÍFEN AQUI]\n\n")
@@ -738,7 +756,7 @@ def evoluir_paciente_enfermaria_ia_fase2(resumo_ia_fase1, dados_medico_hoje, evo
 Sua tarefa é gerar uma nota de EVOLUÇÃO MÉDICA para HOJE.
 MANTENHA OS SEGUINTES CAMPOS EXATAMENTE COMO ESTÃO NA 'Evolução Anterior Original' (fornecida em (2)), A MENOS QUE HAJA INFORMAÇÃO CONTRADITÓRIA DIRETA NOS 'Novos dados e observações do médico para a evolução de HOJE' (fornecidos em (3)) que claramente substitua o conteúdo anterior:
 #ID, #HD (Hipótese Diagnóstica), #AP (Antecedentes Patológicos), #HDA (História da Doença Atual - use o conteúdo de #HDA, #HMA ou #HPMA da evolução anterior para este campo), #MUC (Medicações em Uso Contínuo), #ALERGIAS, #ATB (Antibióticos), #TEV (Profilaxia para TEV).
-O campo #CUIDADOS PALIATIVOS: deve ser omitido da evolução final se não houver informação relevante para ele na 'Evolução Anterior Original' ou se o conteúdo indicar que não se aplica (ex: "não", "ausente", "ndn").
+O campo #CUIDADOS PALIATIVOS: deve ser omitido da evolução final se não houver informação relevante para ele na 'Evolução Anterior Original' ou se o conteúdo indicar que não se aplica (ex: "não", "ausente", "ndn", ou se estiver vazio).
 Para o campo #EXAMES, mantenha os exames listados na 'Evolução Anterior Original' e ADICIONE os novos exames/resultados fornecidos pelo médico.
 A IA DEVE GERAR NOVO CONTEÚDO principalmente para #EVOLUÇÃO (narrativa do dia), #EXAME FÍSICO (integrando novos achados, com cada item iniciando com hífen), #PLANO TERAPÊUTICO (lista com hífen) e #CONDUTA (em primeira pessoa e com hífens).
 Remova TODAS as instruções entre colchetes (como "[IA: ...]", "[NOVOS EXAMES AQUI]", etc.) da saída final.
@@ -927,10 +945,19 @@ def parse_lab_report(text):
     for k, lbl in [("ALB","ALB"),("AML","AML"),("LIP","LIP")]:
         if all_res.get(k): out_sections["HEPATOGRAMA_PANCREAS"].append(format_value_with_alert(lbl, all_res[k], k))
 
-    gas_pfx = next((p for p in ["GA_","GV_"] if any(k.startswith(p) for k in all_res)),"")
-    if gas_pfx : 
+    # Lógica para formatar a saída da Gasometria
+    gas_pfx = ""
+    # Verifica se há chaves de gasometria com prefixo GA_ ou GV_
+    if any(k.startswith("GA_") for k in all_res.keys()):
+        gas_pfx = "GA_"
+    elif any(k.startswith("GV_") for k in all_res.keys()):
+        gas_pfx = "GV_"
+    
+    gas_params_output = []
+    gas_header = ""
+
+    if gas_pfx: # Se um prefixo foi determinado
         gas_header = "Gasometria Arterial: " if gas_pfx == "GA_" else "Gasometria Venosa: "
-        gas_params_output = []
         gas_order_map = { 
             "pH": "pH_gas", "pCO2": "pCO2_gas", "pO2": "pO2_gas", 
             "HCO3": "HCO3_gas", "BE": "BE_gas", 
@@ -940,21 +967,21 @@ def parse_lab_report(text):
             full_key_to_check = gas_pfx + dict_key_suffix 
             if full_key_to_check in all_res:
                 gas_params_output.append(format_value_with_alert(display_label, all_res[full_key_to_check], dict_key_suffix))
-        if gas_params_output:
-            out_sections["GASOMETRIA"].append(gas_header + " // ".join(gas_params_output))
-    elif any("_gas" in k for k in all_res.keys()): 
+    
+    elif any("_gas" in k for k in all_res.keys() if not k.startswith("GA_") and not k.startswith("GV_")): 
+        # Caso encontre parâmetros de gasometria sem prefixo GA_ ou GV_
         gas_header = "Gasometria: "
-        gas_params_output = []
         gas_order_map = { 
             "pH": "pH_gas", "pCO2": "pCO2_gas", "pO2": "pO2_gas", 
             "HCO3": "HCO3_gas", "BE": "BE_gas", 
             "SatO2": "SatO2_gas", "Lac": "Lac_gas", "cCO2": "cCO2_gas"
         }
         for display_label, dict_key_suffix in gas_order_map.items():
-            if dict_key_suffix in all_res: 
+            if dict_key_suffix in all_res: # Verifica a chave base sem prefixo
                  gas_params_output.append(format_value_with_alert(display_label, all_res[dict_key_suffix], dict_key_suffix))
-        if gas_params_output:
-            out_sections["GASOMETRIA"].append(gas_header + " // ".join(gas_params_output))
+    
+    if gas_params_output: # Só adiciona à seção se houver parâmetros extraídos
+        out_sections["GASOMETRIA"].append(gas_header + " // ".join(gas_params_output))
 
 
     for k, lbl in [("U1_Nit","Nit"),("U1_Leuco","Leuco Ur"),("U1_Hem","Hem Ur")]:
@@ -1212,4 +1239,5 @@ with tab2: # Aba do Agente IA
 
 # Rodapé comum
 st.markdown("---")
-st.caption("Este aplicativo é uma ferramenta de auxílio e não substitui a análise crítica e o julgamento clínico profissional. Verifique sempre os resultados e a formatação final antes de usar em prontuários")
+st.caption("Este aplicativo é uma ferramenta de auxílio e não substitui a análise crítica e o julgamento clínico profissional. Verifique sempre os resultados e a formatação final antes de usar em prontuários.")
+
