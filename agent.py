@@ -200,7 +200,7 @@ def extract_datetime_info(lines):
             date_part_full = m_specific.group(1)
             time_part = m_specific.group(2)
             try:
-                dt_obj_date = date_parser.parse(date_part_full, dayfirst=True, fuzzy=False) # fuzzy=False para mais precisão
+                dt_obj_date = date_parser.parse(date_part_full, dayfirst=True, fuzzy=False) 
                 day_month = dt_obj_date.strftime("%d/%m")
                 time_parts_match = re.match(r"(\d{1,2}):(\d{2})", time_part)
                 if time_parts_match:
@@ -208,7 +208,6 @@ def extract_datetime_info(lines):
                     m_part = time_parts_match.group(2).zfill(2)
                     return f"{day_month} {h_part}h{m_part}"
             except (ValueError, TypeError):
-                # Fallback se o parser falhar, tenta regex simples
                 day_month_match = re.match(r"(\d{1,2}/\d{1,2})", date_part_full)
                 if day_month_match:
                     time_parts_match = re.match(r"(\d{1,2}):(\d{2})", time_part)
@@ -219,10 +218,9 @@ def extract_datetime_info(lines):
     
     # Fallback para padrões genéricos (limitado às primeiras ~20 linhas)
     for line_idx, line in enumerate(lines[:20]): 
-        # Padrão para "Data: DD/MM/YY HH:MM" ou "Coleta: DD.MM.YYYY HHhMM" etc.
         m_generic = re.search(
-            r"(data|coleta|recebimento|realização)(?:[^0-9\n<>-]*?)(\d{1,2}[./-]\d{1,2}(?:[./-]\d{2,4})?)?" # Data opcional
-            r"(?:[^0-9\n<>-]*?)(\d{1,2}[:hH]\d{1,2})", # Hora
+            r"(data|coleta|recebimento|realização)(?:[^0-9\n<>-]*?)(\d{1,2}[./-]\d{1,2}(?:[./-]\d{2,4})?)?" 
+            r"(?:[^0-9\n<>-]*?)(\d{1,2}[:hH]\d{1,2})", 
             line,
             re.IGNORECASE
         )
@@ -235,11 +233,10 @@ def extract_datetime_info(lines):
                 try:
                     dt_obj_generic_date = date_parser.parse(date_str_generic, dayfirst=True, fuzzy=True)
                     formatted_date = dt_obj_generic_date.strftime("%d/%m")
-                except: # Tenta regex simples se o parser falhar
+                except: 
                     dm_match = re.match(r"(\d{1,2}[./-]\d{1,2})", date_str_generic)
                     if dm_match: formatted_date = dm_match.group(1).replace('.', '/').replace('-', '/')
             
-            # Formata a hora para HHhMM
             cleaned_time_str = time_str_generic.replace('h',':').replace('H',':')
             time_parts_match = re.match(r"(\d{1,2}):(\d{2})", cleaned_time_str)
             formatted_time = ""
@@ -247,17 +244,15 @@ def extract_datetime_info(lines):
                 h_part = time_parts_match.group(1).zfill(2)
                 m_part = time_parts_match.group(2).zfill(2)
                 formatted_time = f"{h_part}h{m_part}"
-            elif len(cleaned_time_str) == 4 and cleaned_time_str.isdigit(): # HHMM
+            elif len(cleaned_time_str) == 4 and cleaned_time_str.isdigit(): 
                 formatted_time = f"{cleaned_time_str[:2]}h{cleaned_time_str[2:]}"
-            elif len(cleaned_time_str) == 3 and cleaned_time_str.isdigit(): # HMM
+            elif len(cleaned_time_str) == 3 and cleaned_time_str.isdigit(): 
                 formatted_time = f"{cleaned_time_str[0].zfill(2)}h{cleaned_time_str[1:]}"
-
 
             if formatted_date and formatted_time: 
                 return f"{formatted_date} {formatted_time}"
-            elif formatted_time: # Se só achou a hora com este regex
-                 # Tenta buscar a data em linhas próximas
-                for look_back_idx in range(max(0, line_idx-2), line_idx +1 ): # Linha atual e 2 anteriores
+            elif formatted_time: 
+                for look_back_idx in range(max(0, line_idx-2), line_idx +1 ): 
                     date_only_match = re.search(r"(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})", lines[look_back_idx])
                     if date_only_match:
                         try:
@@ -265,9 +260,7 @@ def extract_datetime_info(lines):
                             formatted_date_only = dt_obj_date_only.strftime("%d/%m")
                             return f"{formatted_date_only} {formatted_time}"
                         except: continue
-                # Se ainda não achou data, mas achou hora, retorna só a hora (menos ideal)
-                # return formatted_time 
-    return "" # Retorna vazio se nada for encontrado
+    return "" 
 
 
 def extract_hemograma_completo(lines):
@@ -359,7 +352,7 @@ def extract_funcao_renal_e_eletrólitos(lines):
     results["Cr"] = extract_labeled_value(lines, "Creatinina ", label_must_be_at_start=True)
     results["eGFR"] = extract_labeled_value(lines, ["eGFR", "*eGFR", "Ritmo de Filtração Glomerular"], label_must_be_at_start=True)
     for k, lbls in [("K", ["Potássio", "K "]), ("Na", ["Sódio", "Na "]), ("Mg", "Magnésio"), 
-                    ("P", "Fósforo"), ("CaI", "Cálcio Iônico"), ("Cl", "Cloreto"), ("Gli", ["Glicose", "Glicemia"])]:
+                    ("P", "Fósforo"), ("CaI", "Cálcio Iônico"), ("Cl", ["Cloro","Cloreto", "Cl "]), ("Gli", ["Glicose", "Glicemia"])]: 
         results[k] = extract_labeled_value(lines, lbls, label_must_be_at_start=k not in ["CaI"])
     return results
 
@@ -371,12 +364,11 @@ def extract_marcadores_inflamatorios_cardiacos(lines):
 
 def extract_hepatograma_pancreas(lines):
     results = {}
+    tgo_val, tgp_val = "", ""
     
     # TGO
-    tgo_val = ""
     for i, line in enumerate(lines):
         if "Transaminase oxalacética - TGO" in line or ("Aspartato amino transferase" in line and "TGO" in line):
-            # Tenta encontrar o valor nas próximas 3 linhas, priorizando linhas que começam com o número e U/L
             for offset in range(1, 4): 
                 if i + offset < len(lines):
                     target_line = lines[i + offset]
@@ -384,13 +376,12 @@ def extract_hepatograma_pancreas(lines):
                     if match_ul:
                         tgo_val = match_ul.group(1)
                         break
-            if tgo_val: break # Sai do loop principal se encontrou
-    if not tgo_val: # Fallback mais genérico se não encontrou com U/L
+            if tgo_val: break 
+    if not tgo_val: 
         tgo_val = extract_labeled_value(lines, ["TGO", "AST"], label_must_be_at_start=False, search_window_lines=1, require_unit="U/L")
     results["TGO"] = tgo_val
 
     # TGP
-    tgp_val = ""
     for i, line in enumerate(lines):
         if "Transaminase pirúvica - TGP" in line or ("Alanina amino transferase" in line and "TGP" in line):
             for offset in range(1, 4):
@@ -404,24 +395,13 @@ def extract_hepatograma_pancreas(lines):
     if not tgp_val:
         tgp_val = extract_labeled_value(lines, ["TGP", "ALT"], label_must_be_at_start=False, search_window_lines=1, require_unit="U/L")
     results["TGP"] = tgp_val
-
-    # Outros exames do hepatograma e pâncreas
-    # Para GGT e FA, o valor está na mesma linha do label no seu exemplo
-    # Para Bilirrubinas, o valor está na mesma linha do label específico
     
-    # Gama-Glutamil Transferase (GGT)
     results["GGT"] = extract_labeled_value(lines, ["Gama-Glutamil Transferase", "GGT"], label_must_be_at_start=True, search_window_lines=0, require_unit="U/L")
-    if not results["GGT"]: # Fallback se não começar com o label ou não tiver U/L
-         results["GGT"] = extract_labeled_value(lines, ["Gama-Glutamil Transferase", "GGT"], label_must_be_at_start=True, search_window_lines=0)
+    if not results["GGT"]: results["GGT"] = extract_labeled_value(lines, ["Gama-Glutamil Transferase", "GGT"], label_must_be_at_start=True, search_window_lines=0)
 
-
-    # Fosfatase Alcalina (FA)
     results["FA"] = extract_labeled_value(lines, "Fosfatase Alcalina", label_must_be_at_start=True, search_window_lines=0, require_unit="U/L")
-    if not results["FA"]:
-        results["FA"] = extract_labeled_value(lines, "Fosfatase Alcalina", label_must_be_at_start=True, search_window_lines=0)
+    if not results["FA"]: results["FA"] = extract_labeled_value(lines, "Fosfatase Alcalina", label_must_be_at_start=True, search_window_lines=0)
 
-    # Bilirrubinas
-    # O label principal é "Bilirrubinas Total, Direta e Indireta", os valores vêm depois com labels específicos
     bilirrubina_section_found = False
     bilirrubina_start_index = -1
     for i, line in enumerate(lines):
@@ -431,18 +411,15 @@ def extract_hepatograma_pancreas(lines):
             break
     
     if bilirrubina_section_found:
-        # Procura nas linhas seguintes à identificação da seção de bilirrubinas
         search_lines_bilirrubinas = lines[bilirrubina_start_index:]
-        results["BT"] = extract_labeled_value(search_lines_bilirrubinas, "Bilirrubina Total", label_must_be_at_start=True, search_window_lines=1) # search_window_lines=1 permite valor na linha abaixo se necessário
+        results["BT"] = extract_labeled_value(search_lines_bilirrubinas, "Bilirrubina Total", label_must_be_at_start=True, search_window_lines=1) 
         results["BD"] = extract_labeled_value(search_lines_bilirrubinas, "Bilirrubina Direta", label_must_be_at_start=True, search_window_lines=1)
         results["BI"] = extract_labeled_value(search_lines_bilirrubinas, "Bilirrubina Indireta", label_must_be_at_start=True, search_window_lines=1)
-    else: # Fallback se o header principal não for encontrado
+    else: 
         results["BT"] = extract_labeled_value(lines, "Bilirrubina Total", label_must_be_at_start=True, search_window_lines=1)
         results["BD"] = extract_labeled_value(lines, "Bilirrubina Direta", label_must_be_at_start=True, search_window_lines=1)
         results["BI"] = extract_labeled_value(lines, "Bilirrubina Indireta", label_must_be_at_start=True, search_window_lines=1)
 
-
-    # Albumina, Amilase, Lipase (mantendo a lógica anterior)
     results["ALB"] = extract_labeled_value(lines, "Albumina", label_must_be_at_start=True, search_window_lines=1)
     results["AML"] = extract_labeled_value(lines, "Amilase", label_must_be_at_start=True, search_window_lines=1)
     results["LIP"] = extract_labeled_value(lines, "Lipase", label_must_be_at_start=True, search_window_lines=1)
@@ -474,7 +451,6 @@ def extract_gasometria(lines):
             gas_header_found = True
             break
     
-    # 1b. Fallback se o header completo (com Arterial/Venosa) não for encontrado
     if not gas_header_found:
         for i, line in enumerate(lines):
             l_line = line.lower()
@@ -482,7 +458,6 @@ def extract_gasometria(lines):
                 gas_idx = i 
                 if "arterial" in l_line: exam_prefix = "GA_"
                 elif "venosa" in l_line: exam_prefix = "GV_"
-                # Se não especificar, exam_prefix continua "" (será tratado como genérico)
                 gas_header_found = True
                 break 
     
@@ -490,44 +465,34 @@ def extract_gasometria(lines):
         return results 
 
     gas_map = {
-        "ph": "pH_gas",
-        "pco2": "pCO2_gas",
-        "hco3": "HCO3_gas",
-        "bicarbonato": "HCO3_gas",
-        "excesso de bases": "BE_gas",
-        "be": "BE_gas",
-        "po2": "pO2_gas",
-        "saturação de o2": "SatO2_gas",
-        "sato2": "SatO2_gas",
-        "lactato": "Lac_gas",
-        "conteúdo de co2": "cCO2_gas"
+        "ph": "pH_gas", "pco2": "pCO2_gas", "hco3": "HCO3_gas", 
+        "bicarbonato": "HCO3_gas", "excesso de bases": "BE_gas", "be": "BE_gas", 
+        "po2": "pO2_gas", "saturação de o2": "SatO2_gas", "sato2": "SatO2_gas",
+        "lactato": "Lac_gas", "conteúdo de co2": "cCO2_gas"
     }
                
-    # 2. Itera pelas linhas A PARTIR da linha SEGUINTE ao header da gasometria
-    # Aumentada a janela de busca para maior flexibilidade
-    for line_num in range(gas_idx + 1, min(gas_idx + 1 + len(gas_map) + 10, len(lines))): 
+    # Itera pelas linhas A PARTIR da linha SEGUINTE ao header da gasometria
+    for line_num in range(gas_idx + 1, min(gas_idx + 1 + len(gas_map) + 15, len(lines))): # Aumentada janela de busca
         current_line = lines[line_num]
         
-        # Condição de parada se encontrar header de outro exame ou linha de assinatura
         if any(hdr in current_line.lower() for hdr in ["hemograma", "coagulograma", "bioquimica", "cultura", "urina tipo i", "assinado eletronicamente", "responsável:", "locais de execução"]):
-            break
+            break 
 
         for label_search, out_key in gas_map.items():
-            if out_key not in results: # Processa cada parâmetro apenas uma vez
-                # Regex: Início da linha (^) opcionalmente com espaços (\s*), seguido pelo label (escapado),
-                # seguido por um ou mais separadores (espaço, :, ., -), seguido por espaços opcionais,
-                # e finalmente o valor numérico (GAS_NUM_PATTERN). Case-insensitive.
-                pattern = r"^\s*" + re.escape(label_search) + r"(?:[\s:.-]+)\s*" + GAS_NUM_PATTERN
-                match = re.search(pattern, current_line, re.IGNORECASE)
-                if match:
-                    results[out_key] = match.group(1) # GAS_NUM_PATTERN é o grupo 1
-                    # Assume um parâmetro por linha, então sai do loop interno para ir para a próxima linha
-                    break 
+            if out_key in results and results[out_key]: 
+                continue
+
+            # Padrão: label no início da linha (após espaços), seguido por quaisquer caracteres não numéricos (espaços, :, ., -), depois o valor
+            pattern = r"^\s*" + re.escape(label_search) + r"[^\d<>-]*" + GAS_NUM_PATTERN
+            match = re.search(pattern, current_line, re.IGNORECASE)
+            if match:
+                results[out_key] = match.group(1) 
+                break 
     
     if exam_prefix:
-        return {exam_prefix + k: v for k, v in results.items()}
-    elif results: # Se encontrou valores de gaso mas sem prefixo claro
-        return results 
+        return {exam_prefix + k: v for k, v in results.items() if v} 
+    elif results: 
+        return {k: v for k, v in results.items() if v} 
     return {} 
 
 
@@ -719,7 +684,6 @@ def evoluir_paciente_enfermaria_ia_fase2(resumo_ia_fase1, dados_medico_hoje, evo
     linhas_evol_anterior = evolucao_anterior_original.splitlines()
     campos_fixos_dict = {}
     hda_labels_map = {"#HDA:": "#HDA:", "#HMA:": "#HDA:", "#HPMA:": "#HDA:"}
-    # Inclui #CUIDADOS PALIATIVOS: aqui para que seja capturado na lógica de extração
     campos_para_manter_padronizados = {"#CUIDADOS PALIATIVOS:", "#ID:", "#HD:", "#AP:", "#HDA:", "#MUC:", "#ALERGIAS:", "#ATB:", "#TEV:"} 
     
     current_field_content = []
@@ -743,7 +707,7 @@ def evoluir_paciente_enfermaria_ia_fase2(resumo_ia_fase1, dados_medico_hoje, evo
                     matched_label_padronizado_para_este_header = label_fixo
                     break
         
-        if linha_strip.startswith("#CUIDADOS PALIATIVOS:") and not matched_label_original : # Para não sobrescrever se já pegou por hda_keys
+        if linha_strip.startswith("#CUIDADOS PALIATIVOS:") and not matched_label_original : 
             matched_label_original = "#CUIDADOS PALIATIVOS:"
             matched_label_padronizado_para_este_header = "#CUIDADOS PALIATIVOS:"
 
@@ -774,7 +738,6 @@ def evoluir_paciente_enfermaria_ia_fase2(resumo_ia_fase1, dados_medico_hoje, evo
         elif capturando_exames and linha.strip().startswith("#"): capturando_exames = False 
         if capturando_exames: temp_exames_lines.append(linha)
     if temp_exames_lines: 
-        # Remove o header #EXAMES: do bloco antes de juntar
         exames_bloco_anterior_str = "\n".join([l.replace("#EXAMES:", "", 1).strip() for l in temp_exames_lines if l.strip() and l.strip() != "#EXAMES:"]).strip()
 
     template_evolucao_parts = ["# UNIDADE DE INTERNAÇÃO - EVOLUÇÃO#\n"]
