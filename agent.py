@@ -373,7 +373,7 @@ def extract_hepatograma_pancreas(lines):
                     target_line = lines[i + offset]
                     match_ul = re.match(r"^\s*" + NUM_PATTERN + r"\s*U/L", target_line)
                     if match_ul: tgo_val = match_ul.group(1); break
-            if not tgo_val and i + 2 < len(lines): # Fallback se não encontrou com U/L
+            if not tgo_val and i + 2 < len(lines): 
                  m = re.search(NUM_PATTERN, lines[i+2])
                  if m: tgo_val = m.group(1)
         
@@ -383,12 +383,11 @@ def extract_hepatograma_pancreas(lines):
                     target_line = lines[i + offset]
                     match_ul = re.match(r"^\s*" + NUM_PATTERN + r"\s*U/L", target_line)
                     if match_ul: tgp_val = match_ul.group(1); break
-            if not tgp_val and i + 2 < len(lines): # Fallback
+            if not tgp_val and i + 2 < len(lines): 
                  m = re.search(NUM_PATTERN, lines[i+2])
                  if m: tgp_val = m.group(1)
         
-        if tgo_val and tgp_val and results.get("GGT") and results.get("FA") and results.get("BT"): # Otimização
-            break 
+        # Não precisa de otimização de break aqui, pois os outros são buscados separadamente
             
     results["TGO"] = tgo_val
     results["TGP"] = tgp_val
@@ -447,7 +446,7 @@ def extract_gasometria(lines):
             gas_header_found = True
             break
     
-    if not gas_header_found: # Fallback se o header completo não for encontrado
+    if not gas_header_found: 
         for i, line in enumerate(lines):
             l_line = line.lower()
             if "gasometria" in l_line: 
@@ -964,7 +963,7 @@ def parse_lab_report(text):
         }
         for display_label, dict_key_suffix in gas_order_map.items():
             full_key_to_check = gas_pfx + dict_key_suffix 
-            if full_key_to_check in all_res and all_res[full_key_to_check]: # Adicionado 'and all_res[full_key_to_check]'
+            if full_key_to_check in all_res and all_res[full_key_to_check]: 
                 gas_params_output.append(format_value_with_alert(display_label, all_res[full_key_to_check], dict_key_suffix))
     
     elif any("_gas" in k and all_res[k] for k in all_res.keys() if not k.startswith("GA_") and not k.startswith("GV_")): 
@@ -1036,6 +1035,10 @@ if "ia_output_resumo_alta" not in st.session_state:
     st.session_state.ia_output_resumo_alta = ""
 if "ia_output_orientacoes_alta" not in st.session_state: 
     st.session_state.ia_output_orientacoes_alta = ""
+if "ia_output_diagnosticos_diferenciais" not in st.session_state: # Novo estado
+    st.session_state.ia_output_diagnosticos_diferenciais = ""
+if "ia_input_caso_diagnostico" not in st.session_state: # Novo estado para o input da nova função
+    st.session_state.ia_input_caso_diagnostico = ""
 
 
 # Aba principal para extração de exames
@@ -1131,19 +1134,29 @@ with tab2: # Aba do Agente IA
             "Evoluir Paciente (Enfermaria - Interativo)", 
             "Auxiliar na Admissão de Paciente",
             "Redigir Resumo de Alta", 
-            "Gerar Orientações de Alta"
+            "Gerar Orientações de Alta",
+            "Diagnósticos Diferenciais" # Nova opção
         ]
         tarefa_ia_selecionada = st.selectbox("Qual tarefa o Agente IA deve realizar?", ia_task_options, key="ia_task_selector_tab2")
 
         if tarefa_ia_selecionada == "Evoluir Paciente (Enfermaria - Interativo)":
             st.subheader("Auxiliar na Evolução de Paciente (Interativo)")
+            # Input da evolução anterior
+            if 'evolucao_anterior_input_fase1' not in st.session_state:
+                st.session_state.evolucao_anterior_input_fase1 = ""
+            
             if st.session_state.ia_fase_evolucao_interativa == 1:
-                evolucao_anterior_input_ia = st.text_area("1. Cole a evolução do dia ANTERIOR aqui:", height=200, key="ia_evol_enf_input_fase1_widget")
+                st.session_state.evolucao_anterior_input_fase1 = st.text_area(
+                    "1. Cole a evolução do dia ANTERIOR aqui:", 
+                    value=st.session_state.evolucao_anterior_input_fase1, 
+                    height=200, 
+                    key="ia_evol_enf_input_fase1_widget"
+                )
                 if st.button("Analisar Evolução Anterior com IA", key="btn_ia_evol_enf_fase1"):
-                    if evolucao_anterior_input_ia:
+                    if st.session_state.evolucao_anterior_input_fase1: # Usa o valor do session_state
                         with st.spinner("IA processando a evolução anterior..."):
-                            st.session_state.evolucao_anterior_original_para_fase2 = evolucao_anterior_input_ia 
-                            st.session_state.ia_output_evolucao_enf_fase1 = evoluir_paciente_enfermaria_ia_fase1(evolucao_anterior_input_ia)
+                            st.session_state.evolucao_anterior_original_para_fase2 = st.session_state.evolucao_anterior_input_fase1 
+                            st.session_state.ia_output_evolucao_enf_fase1 = evoluir_paciente_enfermaria_ia_fase1(st.session_state.evolucao_anterior_input_fase1)
                         st.session_state.ia_fase_evolucao_interativa = 2 
                         st.rerun() 
                     else: st.warning("Por favor, cole a evolução anterior.")
@@ -1154,17 +1167,16 @@ with tab2: # Aba do Agente IA
                 
                 st.session_state.ia_dados_medico_hoje = st.text_area(
                     "2. Adicione seus achados de HOJE (anamnese, exame físico, novos exames, intercorrências, etc.):", 
+                    value=st.session_state.ia_dados_medico_hoje,
                     height=200, 
-                    key="ia_dados_medico_input_fase2_widget", 
-                    value=st.session_state.ia_dados_medico_hoje 
+                    key="ia_dados_medico_input_fase2_widget"
                 )
                 
                 col_btn1, col_btn2 = st.columns(2)
                 with col_btn1:
                     if st.button("Gerar Evolução Final com IA", key="btn_ia_evol_enf_fase2"):
-                        dados_medico_hoje_input = st.session_state.ia_dados_medico_input_fase2_widget 
-                        if dados_medico_hoje_input: 
-                            st.session_state.ia_dados_medico_hoje = dados_medico_hoje_input 
+                        # O valor já está em st.session_state.ia_dados_medico_hoje devido ao 'value' do text_area
+                        if st.session_state.ia_dados_medico_hoje: 
                             with st.spinner("IA gerando a evolução final..."):
                                 st.session_state.ia_output_evolucao_final = evoluir_paciente_enfermaria_ia_fase2(
                                     st.session_state.ia_output_evolucao_enf_fase1,
@@ -1175,7 +1187,13 @@ with tab2: # Aba do Agente IA
                         else: st.warning("Por favor, adicione seus achados de hoje.")
                 with col_btn2:
                     if st.button("Voltar/Reiniciar Evolução Interativa", key="btn_reset_evol_interativa"):
-                        st.session_state.ia_fase_evolucao_interativa = 1; st.session_state.ia_output_evolucao_enf_fase1 = ""; st.session_state.ia_dados_medico_hoje = ""; st.session_state.ia_output_evolucao_final = ""; st.session_state.evolucao_anterior_original_para_fase2 = ""; st.rerun()
+                        st.session_state.ia_fase_evolucao_interativa = 1
+                        st.session_state.evolucao_anterior_input_fase1 = "" # Limpa o input da fase 1
+                        st.session_state.ia_output_evolucao_enf_fase1 = ""
+                        st.session_state.ia_dados_medico_hoje = ""
+                        st.session_state.ia_output_evolucao_final = ""
+                        st.session_state.evolucao_anterior_original_para_fase2 = ""
+                        st.rerun()
             
             if st.session_state.ia_fase_evolucao_interativa == 3:
                 if st.session_state.ia_output_evolucao_enf_fase1: st.markdown("---"); st.markdown("**Análise e Sugestões da IA (baseado na evolução anterior):**"); st.markdown(st.session_state.ia_output_evolucao_enf_fase1)
@@ -1185,30 +1203,52 @@ with tab2: # Aba do Agente IA
                     st.text_area("Evolução:", value=st.session_state.ia_output_evolucao_final, height=400, key="ia_evolucao_final_display", disabled=True)
                     components.html(f"""<textarea id="cClipEvolFinal" style="opacity:0;position:absolute;left:-9999px;top:-9999px;">{st.session_state.ia_output_evolucao_final.replace("'", "&apos;").replace('"','&quot;')}</textarea><button onclick="var t=document.getElementById('cClipEvolFinal');t.select();t.setSelectionRange(0,99999);try{{var s=document.execCommand('copy');var m=document.createElement('div');m.textContent=s?'Evolução copiada!':'Falha.';m.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);padding:10px 20px;background-color:'+(s?'#28a745':'#dc3545')+';color:white;border-radius:5px;z-index:1000;';document.body.appendChild(m);setTimeout(function(){{document.body.removeChild(m);}},2000);}}catch(e){{alert('Não foi possível copiar.');}}" style="padding:10px 15px;background-color:#28a745;color:white;border:none;border-radius:5px;cursor:pointer;width:100%;margin-top:10px;">📋 Copiar Evolução Final</button>""", height=65)
                 if st.button("Iniciar Nova Evolução Interativa", key="btn_nova_evol_interativa"):
-                    st.session_state.ia_fase_evolucao_interativa = 1; st.session_state.ia_output_evolucao_enf_fase1 = ""; st.session_state.ia_dados_medico_hoje = ""; st.session_state.ia_output_evolucao_final = ""; st.session_state.evolucao_anterior_original_para_fase2 = ""; st.rerun()
+                    st.session_state.ia_fase_evolucao_interativa = 1
+                    st.session_state.evolucao_anterior_input_fase1 = "" # Limpa o input da fase 1
+                    st.session_state.ia_output_evolucao_enf_fase1 = ""
+                    st.session_state.ia_dados_medico_hoje = ""
+                    st.session_state.ia_output_evolucao_final = ""
+                    st.session_state.evolucao_anterior_original_para_fase2 = ""
+                    st.rerun()
 
         elif tarefa_ia_selecionada == "Auxiliar na Admissão de Paciente":
             st.subheader("Gerar Rascunho de Admissão")
-            info_caso_input_ia = st.text_area("Forneça as informações do caso para admissão:", height=300, key="ia_adm_info_input_tab2")
+            if 'ia_input_admissao_caso' not in st.session_state:
+                st.session_state.ia_input_admissao_caso = ""
+            st.session_state.ia_input_admissao_caso = st.text_area(
+                "Forneça as informações do caso para admissão:", 
+                value=st.session_state.ia_input_admissao_caso, 
+                height=300, 
+                key="ia_adm_info_input_widget"
+            )
             if st.button("Gerar Admissão com IA", key="btn_ia_adm_tab2"):
-                if info_caso_input_ia:
+                if st.session_state.ia_input_admissao_caso:
                     with st.spinner("IA gerando o rascunho da admissão..."):
-                        st.session_state.ia_output_admissao = preencher_admissao_ia(info_caso_input_ia)
+                        st.session_state.ia_output_admissao = preencher_admissao_ia(st.session_state.ia_input_admissao_caso)
                 else: st.warning("Por favor, forneça as informações do caso.")
             if st.session_state.ia_output_admissao:
                 st.markdown("---"); st.subheader("Rascunho da Admissão (gerado pela IA):")
                 st.text_area("Modelo Preenchido:", value=st.session_state.ia_output_admissao, height=400, key="ia_admissao_output_display_tab2", disabled=True)
                 components.html(f"""<textarea id="cClipAdmissaoTab2" style="opacity:0;position:absolute;left:-9999px;top:-9999px;">{st.session_state['ia_output_admissao'].replace("'", "&apos;").replace('"',"&quot;")}</textarea><button onclick="var t=document.getElementById('cClipAdmissaoTab2');t.select();t.setSelectionRange(0,99999);try{{var s=document.execCommand('copy');var m=document.createElement('div');m.textContent=s?'Admissão copiada!':'Falha.';m.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);padding:10px 20px;background-color:'+(s?'#28a745':'#dc3545')+';color:white;border-radius:5px;z-index:1000;';document.body.appendChild(m);setTimeout(function(){{document.body.removeChild(m);}},2000);}}catch(e){{alert('Não foi possível copiar.');}}" style="padding:10px 15px;background-color:#28a745;color:white;border:none;border-radius:5px;cursor:pointer;width:100%;margin-top:10px;">📋 Copiar Rascunho da Admissão</button>""", height=65)
                 if st.button("Limpar Rascunho da Admissão", key="btn_clear_ia_adm_tab2"):
-                    st.session_state.ia_output_admissao = ""; st.rerun()
+                    st.session_state.ia_output_admissao = ""
+                    st.session_state.ia_input_admissao_caso = "" # Limpa o input também
+                    st.rerun()
         
         elif tarefa_ia_selecionada == "Redigir Resumo de Alta":
             st.subheader("Redigir Resumo de Alta Hospitalar")
-            ultima_evolucao_input_alta = st.text_area("Cole a ÚLTIMA evolução completa do paciente aqui:", height=300, key="ia_input_resumo_alta")
+            if 'ia_input_ultima_evolucao_alta' not in st.session_state:
+                st.session_state.ia_input_ultima_evolucao_alta = ""
+            st.session_state.ia_input_ultima_evolucao_alta = st.text_area(
+                "Cole a ÚLTIMA evolução completa do paciente aqui:", 
+                value=st.session_state.ia_input_ultima_evolucao_alta, 
+                height=300, 
+                key="ia_input_resumo_alta_widget"
+            )
             if st.button("Gerar Resumo de Alta com IA", key="btn_ia_resumo_alta"):
-                if ultima_evolucao_input_alta:
+                if st.session_state.ia_input_ultima_evolucao_alta:
                     with st.spinner("IA gerando o resumo de alta..."):
-                        st.session_state.ia_output_resumo_alta = gerar_resumo_alta_ia(ultima_evolucao_input_alta)
+                        st.session_state.ia_output_resumo_alta = gerar_resumo_alta_ia(st.session_state.ia_input_ultima_evolucao_alta)
                 else:
                     st.warning("Por favor, cole a última evolução do paciente.")
             if st.session_state.ia_output_resumo_alta:
@@ -1216,15 +1256,24 @@ with tab2: # Aba do Agente IA
                 st.text_area("Resumo:", value=st.session_state.ia_output_resumo_alta, height=400, key="ia_resumo_alta_display", disabled=True)
                 components.html(f"""<textarea id="cClipResumoAlta" style="opacity:0;position:absolute;left:-9999px;top:-9999px;">{st.session_state.ia_output_resumo_alta.replace("'", "&apos;").replace('"',"&quot;")}</textarea><button onclick="var t=document.getElementById('cClipResumoAlta');t.select();t.setSelectionRange(0,99999);try{{var s=document.execCommand('copy');var m=document.createElement('div');m.textContent=s?'Resumo copiado!':'Falha.';m.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);padding:10px 20px;background-color:'+(s?'#28a745':'#dc3545')+';color:white;border-radius:5px;z-index:1000;';document.body.appendChild(m);setTimeout(function(){{document.body.removeChild(m);}},2000);}}catch(e){{alert('Não foi possível copiar.');}}" style="padding:10px 15px;background-color:#007bff;color:white;border:none;border-radius:5px;cursor:pointer;width:100%;margin-top:10px;">📋 Copiar Resumo de Alta</button>""", height=65)
                 if st.button("Limpar Resumo de Alta", key="btn_clear_ia_resumo_alta"):
-                    st.session_state.ia_output_resumo_alta = ""; st.rerun()
+                    st.session_state.ia_output_resumo_alta = ""
+                    st.session_state.ia_input_ultima_evolucao_alta = "" # Limpa o input
+                    st.rerun()
 
         elif tarefa_ia_selecionada == "Gerar Orientações de Alta":
             st.subheader("Gerar Orientações de Alta (Sinais de Alerta)")
-            caso_paciente_input_orient = st.text_area("Descreva o caso do paciente (diagnóstico principal, comorbidades relevantes, pontos chave da internação):", height=200, key="ia_input_orientacoes_alta")
+            if 'ia_input_caso_orientacoes' not in st.session_state:
+                st.session_state.ia_input_caso_orientacoes = ""
+            st.session_state.ia_input_caso_orientacoes = st.text_area(
+                "Descreva o caso do paciente (diagnóstico principal, comorbidades relevantes, pontos chave da internação):", 
+                value=st.session_state.ia_input_caso_orientacoes,
+                height=200, 
+                key="ia_input_orientacoes_alta_widget"
+            )
             if st.button("Gerar Orientações de Alta com IA", key="btn_ia_orientacoes_alta"):
-                if caso_paciente_input_orient:
+                if st.session_state.ia_input_caso_orientacoes:
                     with st.spinner("IA gerando as orientações de alta..."):
-                        st.session_state.ia_output_orientacoes_alta = gerar_orientacoes_alta_ia(caso_paciente_input_orient)
+                        st.session_state.ia_output_orientacoes_alta = gerar_orientacoes_alta_ia(st.session_state.ia_input_caso_orientacoes)
                 else:
                     st.warning("Por favor, descreva o caso do paciente.")
             if st.session_state.ia_output_orientacoes_alta:
@@ -1232,7 +1281,40 @@ with tab2: # Aba do Agente IA
                 st.markdown(st.session_state.ia_output_orientacoes_alta) 
                 components.html(f"""<textarea id="cClipOrientAlta" style="opacity:0;position:absolute;left:-9999px;top:-9999px;">{st.session_state.ia_output_orientacoes_alta.replace("'", "&apos;").replace('"',"&quot;")}</textarea><button onclick="var t=document.getElementById('cClipOrientAlta');t.select();t.setSelectionRange(0,99999);try{{var s=document.execCommand('copy');var m=document.createElement('div');m.textContent=s?'Orientações copiadas!':'Falha.';m.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);padding:10px 20px;background-color:'+(s?'#28a745':'#dc3545')+';color:white;border-radius:5px;z-index:1000;';document.body.appendChild(m);setTimeout(function(){{document.body.removeChild(m);}},2000);}}catch(e){{alert('Não foi possível copiar.');}}" style="padding:10px 15px;background-color:#007bff;color:white;border:none;border-radius:5px;cursor:pointer;width:100%;margin-top:10px;">📋 Copiar Orientações de Alta</button>""", height=65)
                 if st.button("Limpar Orientações de Alta", key="btn_clear_ia_orientacoes_alta"): 
-                    st.session_state.ia_output_orientacoes_alta = ""; st.rerun()
+                    st.session_state.ia_output_orientacoes_alta = ""
+                    st.session_state.ia_input_caso_orientacoes = "" # Limpa o input
+                    st.rerun()
+        
+        elif tarefa_ia_selecionada == "Diagnósticos Diferenciais": # Nova funcionalidade
+            st.subheader("Gerar Diagnósticos Diferenciais com IA")
+            if 'ia_input_caso_diagnostico' not in st.session_state: # Garante a inicialização
+                st.session_state.ia_input_caso_diagnostico = ""
+
+            # Usa a variável de estado para o valor do text_area
+            st.session_state.ia_input_caso_diagnostico = st.text_area(
+                "Descreva o caso clínico (queixas, sinais, sintomas, exame físico, exames complementares):",
+                value=st.session_state.ia_input_caso_diagnostico, # Vincula ao estado da sessão
+                height=300,
+                key="ia_input_caso_diagnostico_widget" # Chave única para o widget
+            )
+            if st.button("Gerar Diagnósticos Diferenciais", key="btn_ia_diag_diff"):
+                # Lê o valor da variável de estado
+                caso_clinico_input = st.session_state.ia_input_caso_diagnostico
+                if caso_clinico_input:
+                    with st.spinner("IA analisando o caso e gerando diagnósticos diferenciais..."):
+                        st.session_state.ia_output_diagnosticos_diferenciais = gerar_diagnosticos_diferenciais_ia(caso_clinico_input)
+                else:
+                    st.warning("Por favor, descreva o caso clínico.")
+            
+            if st.session_state.ia_output_diagnosticos_diferenciais:
+                st.markdown("---")
+                st.subheader("Análise de Diagnósticos Diferenciais (Gerada pela IA):")
+                st.markdown(st.session_state.ia_output_diagnosticos_diferenciais)
+                components.html(f"""<textarea id="cClipDiagDiff" style="opacity:0;position:absolute;left:-9999px;top:-9999px;">{st.session_state.ia_output_diagnosticos_diferenciais.replace("'", "&apos;").replace('"','&quot;')}</textarea><button onclick="var t=document.getElementById('cClipDiagDiff');t.select();t.setSelectionRange(0,99999);try{{var s=document.execCommand('copy');var m=document.createElement('div');m.textContent=s?'Análise copiada!':'Falha.';m.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);padding:10px 20px;background-color:'+(s?'#28a745':'#dc3545')+';color:white;border-radius:5px;z-index:1000;';document.body.appendChild(m);setTimeout(function(){{document.body.removeChild(m);}},2000);}}catch(e){{alert('Não foi possível copiar.');}}" style="padding:10px 15px;background-color:#007bff;color:white;border:none;border-radius:5px;cursor:pointer;width:100%;margin-top:10px;">📋 Copiar Análise</button>""", height=65)
+                if st.button("Limpar Análise de Diagnósticos", key="btn_clear_ia_diag_diff"):
+                    st.session_state.ia_output_diagnosticos_diferenciais = ""
+                    st.session_state.ia_input_caso_diagnostico = "" # Limpa o input
+                    st.rerun()
 
 
 # Rodapé comum
