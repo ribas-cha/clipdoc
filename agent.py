@@ -172,79 +172,53 @@ def extract_labeled_value(lines, labels_to_search, pattern_to_extract=NUM_PATTER
     return ""
 
 # --- Função de Anonimização ---
-def anonimizar_texto(texto):
-    # Lista de palavras que, se forem a primeira palavra de uma sequência capitalizada,
-    # provavelmente indicam um título/termo médico e não um nome de paciente.
-    # Esta lista pode ser expandida e ajustada conforme necessário.
-    PALAVRAS_INICIAIS_NAO_NOME = [
-        "Data", "Hora", "Série", "Leucócitos", "Neutrófilos", "Eosinófilos", 
-        "Basófilos", "Linfócitos", "Monócitos", "Contagem", "Fontes", "Assinado",
-        "Responsável", "Locais", "Laboratório", "Gasometria", "Excesso", "Bases", "Saturação",
-        "Conteúdo", "Transaminase", "Aspartato", "Alanina", "Gama-Glutamil", 
-        "Fosfatase", "Bilirrubinas", "Bilirrubina", "Amilase", "Lipase", "Proteína",
-        "Ureia", "Creatinina", "Potássio", "Sódio", "Cloro", "Glicose", "Hipóteses",
-        "Diagnósticos", "Diferenciais", "Exames", "Comprobatórios", "Resumo", "Crítico",
-        "Caso", "Clínico", "Queixas", "Sinais", "Sintomas", "Alterações", "Físico",
-        "Complementares", "Miocárdio", "Insuficiência", "Cardíaca", "Congestiva",
-        "Reaplicação", "Pneumonia", "Superinfecção", "AngioTC", "Aorta", "Tórax",
-        "Eletrocardiograma", "Ecocardiograma", "Cintilografia", "Ventilação-Perfusão",
-        "Pulmonar", "Peptídeos", "Natriuréticos", "Material", "Método", "Nota", "Referência",
-        "Cálculo", "Esta", "Sob", "Total", "Direta", "Indireta", "Oxalacética", "Pirúvica",
-        "Resultado", "Valor", "Unidade", "Intervalo" 
-        # Adicionar mais termos comuns que iniciam títulos ou seções e não são nomes
-    ]
-    # Compilar a lista para um padrão regex para checagem eficiente (case-insensitive)
-    # Adiciona \b para garantir que são palavras inteiras
-    padrao_palavras_iniciais_nao_nome_regex = r"^(?:" + "|".join(re.escape(palavra) for palavra in PALAVRAS_INICIAIS_NAO_NOME) + r")\b"
-
-    def substituir_nome_por_iniciais(match):
-        nome_completo = match.group(0).strip() # .strip() para remover espaços extras
-        partes_nome = nome_completo.split()
-        
-        if not partes_nome: # Se for uma string vazia após o split
-            return nome_completo
-
-        # 1. Não abreviar se for tudo maiúsculo (sigla) ou terminar com ':' (cabeçalho)
-        if nome_completo.isupper() or nome_completo.endswith(":"):
-            return nome_completo
-
-        # 2. Se a primeira palavra da sequência capitalizada estiver na lista de "não-nomes", não abreviar.
-        if re.match(padrao_palavras_iniciais_nao_nome_regex, partes_nome[0], re.IGNORECASE):
-            return nome_completo
-        
-        # 3. Tentar identificar nomes de pacientes próximos a "DN:" (Data de Nascimento)
-        #    Exemplo: "MARCELO GARCIA DN: 16/01/1970"
-        #    Este é um caso específico e pode precisar de um regex separado se quisermos ser muito precisos.
-        #    Para a lógica global, vamos focar em 2-3 palavras capitalizadas.
-
-        # 4. Abreviar se tiver 2 ou 3 palavras capitalizadas que não se encaixam nas exceções acima
-        #    e não contêm apenas palavras muito curtas (ex: "De Tal") que já seriam tratadas pelo composto.
-        if 1 < len(partes_nome) <= 3: # Foco em 2 ou 3 palavras
-            # Verifica se todas as partes começam com maiúscula
-            if all(p and p[0].isupper() for p in partes_nome):
-                # Remove preposições curtas ANTES de gerar iniciais, mas elas contam para o len(partes_nome)
-                partes_para_iniciais = [p for p in partes_nome if p.lower() not in ["de", "da", "do", "dos", "das", "e"]]
+def anonimizar_texto(texto_original):
+    """
+    Anonimiza nomes de pacientes especificamente na linha que começa com #ID:.
+    Outras partes do texto não são modificadas por esta função de abreviação.
+    """
+    linhas_processadas = []
+    for linha in texto_original.splitlines():
+        linha_strip = linha.strip()
+        if linha_strip.startswith("#ID:"):
+            partes = linha.split(":", 1)
+            id_tag = partes[0] + ":"
+            conteudo_id = partes[1].strip() if len(partes) > 1 else ""
+            
+            # Lógica interna para abreviar o conteúdo da linha de ID
+            def substituir_nome_id_por_iniciais(match):
+                nome_completo = match.group(0).strip()
+                partes_nome = nome_completo.split()
+                # Condições para ser considerado um nome a ser abreviado:
+                # - Mais de uma parte (nome e sobrenome)
+                # - Todas as partes começam com maiúscula
+                # - Não é tudo maiúsculo (evitar siglas como "HOSPITAL DAS CLINICAS")
+                # - Não é uma palavra da lista de exclusão (para evitar abreviar "Pronto Socorro")
+                PALAVRAS_EXCLUIR_DA_ABREVIACAO_ID = ["Pronto", "Socorro", "Centro", "Clínicas", "Hospital"] # Adicionar mais se necessário
                 
-                # Só abrevia se, após remover preposições, ainda tivermos um nome razoável (ex: pelo menos 2 partes significativas)
-                # e se não for uma única palavra após remover preposições (ex: "De La Cruz" -> "D. L. C.", mas "De" sozinho não)
-                if len(partes_para_iniciais) >= 2 : # Precisa de pelo menos duas partes significativas
-                    iniciais = [p[0] + "." for p in partes_para_iniciais]
-                    return " ".join(iniciais)
-        return nome_completo
+                if len(partes_nome) > 1 and \
+                   all(p and p[0].isupper() for p in partes_nome) and \
+                   not nome_completo.isupper() and \
+                   not any(palavra_excluir.lower() in nome_completo.lower() for palavra_excluir in PALAVRAS_EXCLUIR_DA_ABREVIACAO_ID):
+                    
+                    partes_para_iniciais = [p for p in partes_nome if p.lower() not in ["de", "da", "do", "dos", "das", "e"]]
+                    if len(partes_para_iniciais) >= 2:
+                        iniciais = [p[0] + "." for p in partes_para_iniciais]
+                        return " ".join(iniciais)
+                return nome_completo # Retorna original se não se encaixar nos critérios
 
-    # Padrão para nomes com preposições (ex: "Fulano de Tal", "Maria das Graças")
-    # Aumenta o número de repetições para nomes mais longos com preposições.
-    padrao_nome_composto = r"\b([A-ZÀ-Ú][a-zà-ú'-]+(?:\s+(?:de|da|do|dos|das|e)\s+[A-ZÀ-Ú][a-zà-ú'-]+){1,3})\b"
-    texto_anonimizado = re.sub(padrao_nome_composto, substituir_nome_por_iniciais, texto)
-    
-    # Padrão geral para sequências de 2 ou 3 palavras capitalizadas,
-    # excluindo títulos comuns (DR, DRA, etc.)
-    # Este regex tenta capturar 2 ou 3 palavras capitalizadas.
-    # A lógica de substituição (substituir_nome_por_iniciais) fará a filtragem final.
-    padrao_nome_geral = r"\b(?!DR\b|DRA\b|Dr\b|Dra\b|SR\b|SRA\b|Sr\b|Sra\b)([A-ZÀ-Ú][a-zà-ú'-]+(?:\s+[A-ZÀ-Ú][a-zà-ú'-]+){1,2})\b"
-    texto_anonimizado = re.sub(padrao_nome_geral, substituir_nome_por_iniciais, texto_anonimizado)
-    
-    return texto_anonimizado
+            # Padrões para encontrar nomes no conteúdo da linha de ID
+            padrao_nome_composto_id = r"\b([A-ZÀ-Ú][a-zà-ú'-]+(?:\s+(?:de|da|do|dos|das|e)\s+[A-ZÀ-Ú][a-zà-ú'-]+){1,3})\b"
+            conteudo_id_anonimizado = re.sub(padrao_nome_composto_id, substituir_nome_id_por_iniciais, conteudo_id)
+            
+            padrao_nome_geral_id = r"\b([A-ZÀ-Ú][a-zà-ú'-]+(?:\s+[A-ZÀ-Ú][a-zà-ú'-]+){1,2})\b"
+            conteudo_id_anonimizado = re.sub(padrao_nome_geral_id, substituir_nome_id_por_iniciais, conteudo_id_anonimizado)
+            
+            linhas_processadas.append(f"{id_tag} {conteudo_id_anonimizado}")
+        else:
+            linhas_processadas.append(linha)
+            
+    return "\n".join(linhas_processadas)
 
 # --- Funções de Extração Específicas ---
 def extract_datetime_info(lines):
@@ -715,7 +689,8 @@ def gerar_resposta_ia(prompt_text):
                 cleaned_final_lines.append(line)
             previous_line_was_blank = is_current_line_blank
         processed_text = "\n".join(cleaned_final_lines)
-        return anonimizar_texto(processed_text)
+        # A anonimização agora é mais específica e não deve abreviar títulos.
+        return anonimizar_texto(processed_text) 
     except Exception as e:
         return f"Erro ao comunicar com a API do Gemini: {e}"
 
@@ -729,14 +704,19 @@ Abaixo está a evolução de um paciente do dia anterior. Faça o seguinte, de m
 
 Evolução do dia anterior:
 ---
-{anonimizar_texto(evolucao_anterior)}
+{evolucao_anterior} 
 ---
 Sua análise (Resumo, Pontos de Discussão, Exame Físico a Avaliar, Sugestões de Conduta):
 """
+    # A anonimização será feita na saída da IA, se necessário, ou no input do parse_lab_report
     return gerar_resposta_ia(prompt)
 
 def evoluir_paciente_enfermaria_ia_fase2(resumo_ia_fase1, dados_medico_hoje, evolucao_anterior_original):
-    linhas_evol_anterior = evolucao_anterior_original.splitlines()
+    # Anonimiza os inputs para a IA, se contiverem nomes de pacientes fora do #ID
+    evolucao_anterior_original_anon = anonimizar_texto(evolucao_anterior_original)
+    dados_medico_hoje_anon = anonimizar_texto(dados_medico_hoje)
+
+    linhas_evol_anterior = evolucao_anterior_original_anon.splitlines() # Usa a versão já anonimizada para extrair campos
     campos_fixos_dict = {}
     hda_labels_map = {"#HDA:": "#HDA:", "#HMA:": "#HDA:", "#HPMA:": "#HDA:"}
     campos_para_manter_padronizados = {"#CUIDADOS PALIATIVOS:", "#ID:", "#HD:", "#AP:", "#HDA:", "#MUC:", "#ALERGIAS:", "#ATB:", "#TEV:"} 
@@ -788,7 +768,7 @@ def evoluir_paciente_enfermaria_ia_fase2(resumo_ia_fase1, dados_medico_hoje, evo
     exames_bloco_anterior_str = ""
     capturando_exames = False
     temp_exames_lines = []
-    for linha in linhas_evol_anterior:
+    for linha in linhas_evol_anterior: # Usa a versão anonimizada aqui também
         if linha.strip().startswith("#EXAMES:"): capturando_exames = True
         elif capturando_exames and linha.strip().startswith("#"): capturando_exames = False 
         if capturando_exames: temp_exames_lines.append(linha)
@@ -803,23 +783,23 @@ def evoluir_paciente_enfermaria_ia_fase2(resumo_ia_fase1, dados_medico_hoje, evo
     for label in ["#ID:", "#HD:", "#AP:", "#HDA:", "#MUC:", "#ALERGIAS:", "#ATB:", "#TEV:"]:
         template_evolucao_parts.append(f"{label} {campos_fixos_dict.get(label, '')}\n\n")
 
-    template_evolucao_parts.append(f"#EXAMES:\n{exames_bloco_anterior_str}\n[NOVOS EXAMES AQUI]\n\n")
-    template_evolucao_parts.append("#EVOLUÇÃO:\n[NARRATIVA DO DIA AQUI]\n\n")
-    template_evolucao_parts.append("#EXAME FÍSICO:\n[EXAME FÍSICO ATUALIZADO AQUI, ITENS COM HÍFEN]\n\n")
-    template_evolucao_parts.append("#PLANO TERAPÊUTICO:\n[PLANO EM ITENS COM HÍFEN AQUI]\n\n")
-    template_evolucao_parts.append("#CONDUTA:\n[CONDUTA EM PRIMEIRA PESSOA E ITENS COM HÍFEN AQUI]\n\n")
+    template_evolucao_parts.append(f"#EXAMES:\n{exames_bloco_anterior_str}\n\n") # Removido [NOVOS EXAMES AQUI]
+    template_evolucao_parts.append("#EVOLUÇÃO:\n\n") 
+    template_evolucao_parts.append("#EXAME FÍSICO:\n\n")
+    template_evolucao_parts.append("#PLANO TERAPÊUTICO:\n\n")
+    template_evolucao_parts.append("#CONDUTA:\n\n")
     template_evolucao_parts.append(f"#DATA PROVÁVEL DA ALTA: {campos_fixos_dict.get('#DATA PROVÁVEL DA ALTA:', 'SEM PREVISÃO')}")
     
     template_evolucao_final = "".join(template_evolucao_parts)
 
     prompt = f"""Você é um médico hospitalista experiente.
 Sua tarefa é gerar uma nota de EVOLUÇÃO MÉDICA para HOJE.
+Use o template fornecido abaixo como base.
 MANTENHA OS SEGUINTES CAMPOS EXATAMENTE COMO ESTÃO NA 'Evolução Anterior Original' (fornecida em (2)), A MENOS QUE HAJA INFORMAÇÃO CONTRADITÓRIA DIRETA NOS 'Novos dados e observações do médico para a evolução de HOJE' (fornecidos em (3)) que claramente substitua o conteúdo anterior:
 #ID, #HD (Hipótese Diagnóstica), #AP (Antecedentes Patológicos), #HDA (História da Doença Atual - use o conteúdo de #HDA, #HMA ou #HPMA da evolução anterior para este campo), #MUC (Medicações em Uso Contínuo), #ALERGIAS, #ATB (Antibióticos), #TEV (Profilaxia para TEV).
 O campo #CUIDADOS PALIATIVOS: deve ser omitido da evolução final se não houver informação relevante para ele na 'Evolução Anterior Original' ou se o conteúdo indicar que não se aplica (ex: "não", "ausente", "ndn", ou se estiver vazio).
-Para o campo #EXAMES, mantenha os exames listados na 'Evolução Anterior Original' e ADICIONE os novos exames/resultados fornecidos pelo médico.
+Para o campo #EXAMES, mantenha os exames listados na 'Evolução Anterior Original' e ADICIONE os novos exames/resultados fornecidos pelo médico em "Novos dados e observações do médico".
 A IA DEVE GERAR NOVO CONTEÚDO principalmente para #EVOLUÇÃO (narrativa do dia), #EXAME FÍSICO (integrando novos achados, com cada item iniciando com hífen), #PLANO TERAPÊUTICO (lista com hífen) e #CONDUTA (em primeira pessoa e com hífens).
-Remova TODAS as instruções entre colchetes (como "[IA: ...]", "[NOVOS EXAMES AQUI]", etc.) da saída final.
 ADICIONE UMA LINHA EM BRANCO APÓS CADA CAMPO PRINCIPAL (ex: após o conteúdo de #HDA:, antes de #MUC:).
 
 (1) Análise da IA sobre a evolução anterior (Resumo do caso, Pontos de discussão, Exame físico a avaliar, Sugestões de conduta da IA):
@@ -829,12 +809,12 @@ ADICIONE UMA LINHA EM BRANCO APÓS CADA CAMPO PRINCIPAL (ex: após o conteúdo d
 
 (2) Evolução Anterior Original (Fonte para os campos que devem ser mantidos e para o formato do exame físico anterior):
 ---
-{anonimizar_texto(evolucao_anterior_original)}
+{evolucao_anterior_original_anon} 
 ---
 
 (3) Novos dados e observações do médico para a evolução de HOJE (anamnese, exame físico, resultados de exames, intercorrências, etc.):
 ---
-{anonimizar_texto(dados_medico_hoje)}
+{dados_medico_hoje_anon}
 ---
 
 Gere a nota de EVOLUÇÃO MÉDICA para HOJE, preenchendo o modelo abaixo com base em TODAS as informações disponíveis e seguindo as instruções específicas para cada campo:
@@ -1149,8 +1129,9 @@ with tab1:
             current_input_tab1 = st.session_state.entrada_widget_tab1
             if current_input_tab1:
                 with st.spinner("Analisando Exames..."): 
-                    texto_anonimizado_exames = anonimizar_texto(current_input_tab1)
-                    st.session_state["saida_exames"] = parse_lab_report(texto_anonimizado_exames)
+                    # A anonimização do texto de entrada para parse_lab_report é feita aqui
+                    texto_para_analise = anonimizar_texto(current_input_tab1)
+                    st.session_state["saida_exames"] = parse_lab_report(texto_para_analise)
                 st.session_state.input_text_area_content_tab1 = "" 
                 st.success("Análise de exames concluída!")
                 st.rerun()
