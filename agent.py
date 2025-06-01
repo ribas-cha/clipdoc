@@ -387,34 +387,49 @@ def extract_hepatograma_pancreas(lines):
                  m = re.search(NUM_PATTERN, lines[i+2])
                  if m: tgp_val = m.group(1)
         
-        # Não precisa de otimização de break aqui, pois os outros são buscados separadamente
+        # Otimização: se já achou TGO e TGP, pode sair mais cedo do loop principal se os outros forem buscados de forma independente
+        # No entanto, a lógica atual já busca os outros independentemente, então este break não é estritamente necessário aqui.
+        # if tgo_val and tgp_val: break 
             
     results["TGO"] = tgo_val
     results["TGP"] = tgp_val
 
+    # Fallbacks mais genéricos com require_unit, caso a lógica acima não pegue
     if not results.get("TGO"): results["TGO"] = extract_labeled_value(lines, ["TGO", "AST"], label_must_be_at_start=False, search_window_lines=1, require_unit="U/L")
     if not results.get("TGP"): results["TGP"] = extract_labeled_value(lines, ["TGP", "ALT"], label_must_be_at_start=False, search_window_lines=1, require_unit="U/L")
     
+    # Extração para GGT e FA - valor na mesma linha do label
     results["GGT"] = extract_labeled_value(lines, ["Gama-Glutamil Transferase", "GGT"], label_must_be_at_start=True, search_window_lines=0, require_unit="U/L")
-    if not results["GGT"]: results["GGT"] = extract_labeled_value(lines, ["Gama-Glutamil Transferase", "GGT"], label_must_be_at_start=True, search_window_lines=0)
+    if not results["GGT"]: # Fallback sem require_unit
+        results["GGT"] = extract_labeled_value(lines, ["Gama-Glutamil Transferase", "GGT"], label_must_be_at_start=True, search_window_lines=0)
 
     results["FA"] = extract_labeled_value(lines, "Fosfatase Alcalina", label_must_be_at_start=True, search_window_lines=0, require_unit="U/L")
-    if not results["FA"]: results["FA"] = extract_labeled_value(lines, "Fosfatase Alcalina", label_must_be_at_start=True, search_window_lines=0)
+    if not results["FA"]: # Fallback sem require_unit
+        results["FA"] = extract_labeled_value(lines, "Fosfatase Alcalina", label_must_be_at_start=True, search_window_lines=0)
 
+    # Extração de Bilirrubinas
+    # Procura pelo header "Bilirrubinas Total, Direta e Indireta" e depois pelos labels específicos
     bilirrubina_section_found = False
     bilirrubina_start_index = -1
     for i, line in enumerate(lines):
         if "bilirrubinas total, direta e indireta" in line.lower():
             bilirrubina_section_found = True
             bilirrubina_start_index = i
-            break
+            break # Encontrou a seção, pode parar de procurar o header
     
+    # Define o escopo de busca para as bilirrubinas
     search_scope_bilirrubinas = lines[bilirrubina_start_index:] if bilirrubina_section_found else lines
 
-    results["BT"] = extract_labeled_value(search_scope_bilirrubinas, "Bilirrubina Total", label_must_be_at_start=True, search_window_lines=1)
+    results["BT"] = extract_labeled_value(search_scope_bilirrubinas, "Bilirrubina Total", label_must_be_at_start=True, search_window_lines=1) # search_window_lines=0 se estiver na mesma linha
     results["BD"] = extract_labeled_value(search_scope_bilirrubinas, "Bilirrubina Direta", label_must_be_at_start=True, search_window_lines=1)
     results["BI"] = extract_labeled_value(search_scope_bilirrubinas, "Bilirrubina Indireta", label_must_be_at_start=True, search_window_lines=1)
 
+    # Fallback se não encontrou com o header principal
+    if not results.get("BT"): results["BT"] = extract_labeled_value(lines, "Bilirrubina Total", label_must_be_at_start=True, search_window_lines=1)
+    if not results.get("BD"): results["BD"] = extract_labeled_value(lines, "Bilirrubina Direta", label_must_be_at_start=True, search_window_lines=1)
+    if not results.get("BI"): results["BI"] = extract_labeled_value(lines, "Bilirrubina Indireta", label_must_be_at_start=True, search_window_lines=1)
+
+    # Albumina, Amilase, Lipase (mantendo a lógica anterior)
     results["ALB"] = extract_labeled_value(lines, "Albumina", label_must_be_at_start=True, search_window_lines=1)
     results["AML"] = extract_labeled_value(lines, "Amilase", label_must_be_at_start=True, search_window_lines=1)
     results["LIP"] = extract_labeled_value(lines, "Lipase", label_must_be_at_start=True, search_window_lines=1)
@@ -870,12 +885,35 @@ Orientações de Alta (Sinais de Alerta para Retorno ao PS):
 """
     return gerar_resposta_ia(prompt)
 
+def gerar_diagnosticos_diferenciais_ia(caso_clinico_original): # Função adicionada
+    caso_clinico = anonimizar_texto(caso_clinico_original)
+    prompt = f"""Você é um médico hospitalista experiente.
+Com base no caso clínico detalhado abaixo (incluindo queixas, sinais, sintomas, alterações de exame físico e exames complementares), faça o seguinte:
+1.  Liste as principais hipóteses diagnósticas, ordenadas da mais provável para a menos provável, se possível.
+2.  Para cada hipótese diagnóstica, sugira os exames comprobatórios ou que ajudariam a refinar o diagnóstico.
+3.  Ao final, realize um resumo crítico do caso, explicando o raciocínio para as hipóteses mais prováveis e por que outras são menos prováveis, considerando os dados fornecidos.
+
+Caso Clínico:
+---
+{caso_clinico}
+---
+
+Análise de Diagnósticos Diferenciais:
+"""
+    return gerar_resposta_ia(prompt)
+
 # --- Função Principal de Análise de Exames (parse_lab_report) ---
 def parse_lab_report(text):
-    subs = [("ur[eé]ia","Ureia"),("pot[aá]ssio","Potássio"),("s[oó]dio","Sódio"),
-            ("c[aá]lcio i[oô]nico","Cálcio Iônico"),("magn[eé]sio","Magnésio"),
-            ("Creatinina(?!\s*Kinase|\s*quinase)","Creatinina ")] 
-    for p, r in subs: text = re.sub(f"(?i){p}", r, text)
+    subs = [(r"Creatinina(?!\s*Kinase|\s*quinase)", "Creatinina ")] # Usando r"" para regex
+    for p, r in subs: text = re.sub(f"(?i){p}", r, text) # f-string aqui é ok pois p é um regex já raw
+    
+    # Padronização de termos ANTES de dividir em linhas
+    text = re.sub(r"(?i)ur[eé]ia", "Ureia", text)
+    text = re.sub(r"(?i)pot[aá]ssio", "Potássio", text)
+    text = re.sub(r"(?i)s[oó]dio", "Sódio", text)
+    text = re.sub(r"(?i)c[aá]lcio i[oô]nico", "Cálcio Iônico", text)
+    text = re.sub(r"(?i)magn[eé]sio", "Magnésio", text)
+
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     
     all_res = {"datetime": extract_datetime_info(lines)}
@@ -1285,20 +1323,18 @@ with tab2: # Aba do Agente IA
                     st.session_state.ia_input_caso_orientacoes = "" # Limpa o input
                     st.rerun()
         
-        elif tarefa_ia_selecionada == "Diagnósticos Diferenciais": # Nova funcionalidade
+        elif tarefa_ia_selecionada == "Diagnósticos Diferenciais": 
             st.subheader("Gerar Diagnósticos Diferenciais com IA")
-            if 'ia_input_caso_diagnostico' not in st.session_state: # Garante a inicialização
+            if 'ia_input_caso_diagnostico' not in st.session_state: 
                 st.session_state.ia_input_caso_diagnostico = ""
 
-            # Usa a variável de estado para o valor do text_area
             st.session_state.ia_input_caso_diagnostico = st.text_area(
                 "Descreva o caso clínico (queixas, sinais, sintomas, exame físico, exames complementares):",
-                value=st.session_state.ia_input_caso_diagnostico, # Vincula ao estado da sessão
+                value=st.session_state.ia_input_caso_diagnostico, 
                 height=300,
-                key="ia_input_caso_diagnostico_widget" # Chave única para o widget
+                key="ia_input_caso_diagnostico_widget" 
             )
             if st.button("Gerar Diagnósticos Diferenciais", key="btn_ia_diag_diff"):
-                # Lê o valor da variável de estado
                 caso_clinico_input = st.session_state.ia_input_caso_diagnostico
                 if caso_clinico_input:
                     with st.spinner("IA analisando o caso e gerando diagnósticos diferenciais..."):
@@ -1313,7 +1349,7 @@ with tab2: # Aba do Agente IA
                 components.html(f"""<textarea id="cClipDiagDiff" style="opacity:0;position:absolute;left:-9999px;top:-9999px;">{st.session_state.ia_output_diagnosticos_diferenciais.replace("'", "&apos;").replace('"','&quot;')}</textarea><button onclick="var t=document.getElementById('cClipDiagDiff');t.select();t.setSelectionRange(0,99999);try{{var s=document.execCommand('copy');var m=document.createElement('div');m.textContent=s?'Análise copiada!':'Falha.';m.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);padding:10px 20px;background-color:'+(s?'#28a745':'#dc3545')+';color:white;border-radius:5px;z-index:1000;';document.body.appendChild(m);setTimeout(function(){{document.body.removeChild(m);}},2000);}}catch(e){{alert('Não foi possível copiar.');}}" style="padding:10px 15px;background-color:#007bff;color:white;border:none;border-radius:5px;cursor:pointer;width:100%;margin-top:10px;">📋 Copiar Análise</button>""", height=65)
                 if st.button("Limpar Análise de Diagnósticos", key="btn_clear_ia_diag_diff"):
                     st.session_state.ia_output_diagnosticos_diferenciais = ""
-                    st.session_state.ia_input_caso_diagnostico = "" # Limpa o input
+                    st.session_state.ia_input_caso_diagnostico = "" 
                     st.rerun()
 
 
