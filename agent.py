@@ -173,18 +173,77 @@ def extract_labeled_value(lines, labels_to_search, pattern_to_extract=NUM_PATTER
 
 # --- Função de Anonimização ---
 def anonimizar_texto(texto):
+    # Lista de palavras que, se forem a primeira palavra de uma sequência capitalizada,
+    # provavelmente indicam um título/termo médico e não um nome de paciente.
+    # Esta lista pode ser expandida e ajustada conforme necessário.
+    PALAVRAS_INICIAIS_NAO_NOME = [
+        "Data", "Hora", "Série", "Leucócitos", "Neutrófilos", "Eosinófilos", 
+        "Basófilos", "Linfócitos", "Monócitos", "Contagem", "Fontes", "Assinado",
+        "Responsável", "Locais", "Laboratório", "Gasometria", "Excesso", "Bases", "Saturação",
+        "Conteúdo", "Transaminase", "Aspartato", "Alanina", "Gama-Glutamil", 
+        "Fosfatase", "Bilirrubinas", "Bilirrubina", "Amilase", "Lipase", "Proteína",
+        "Ureia", "Creatinina", "Potássio", "Sódio", "Cloro", "Glicose", "Hipóteses",
+        "Diagnósticos", "Diferenciais", "Exames", "Comprobatórios", "Resumo", "Crítico",
+        "Caso", "Clínico", "Queixas", "Sinais", "Sintomas", "Alterações", "Físico",
+        "Complementares", "Miocárdio", "Insuficiência", "Cardíaca", "Congestiva",
+        "Reaplicação", "Pneumonia", "Superinfecção", "AngioTC", "Aorta", "Tórax",
+        "Eletrocardiograma", "Ecocardiograma", "Cintilografia", "Ventilação-Perfusão",
+        "Pulmonar", "Peptídeos", "Natriuréticos", "Material", "Método", "Nota", "Referência",
+        "Cálculo", "Esta", "Sob", "Total", "Direta", "Indireta", "Oxalacética", "Pirúvica",
+        "Resultado", "Valor", "Unidade", "Intervalo" 
+        # Adicionar mais termos comuns que iniciam títulos ou seções e não são nomes
+    ]
+    # Compilar a lista para um padrão regex para checagem eficiente (case-insensitive)
+    # Adiciona \b para garantir que são palavras inteiras
+    padrao_palavras_iniciais_nao_nome_regex = r"^(?:" + "|".join(re.escape(palavra) for palavra in PALAVRAS_INICIAIS_NAO_NOME) + r")\b"
+
     def substituir_nome_por_iniciais(match):
-        nome_completo = match.group(0)
+        nome_completo = match.group(0).strip() # .strip() para remover espaços extras
         partes_nome = nome_completo.split()
-        if len(partes_nome) > 1 and all(p[0].isupper() for p in partes_nome if p) and not nome_completo.isupper() and not nome_completo.endswith(":"):
-            iniciais = [p[0] + "." for p in partes_nome if p] 
-            return " ".join(iniciais)
-        return nome_completo 
-    
-    padrao_nome_composto = r"\b([A-ZÀ-Ú][a-zà-ú]+(?:\s+(?:de|da|do|dos|das)\s+[A-ZÀ-Ú][a-zà-ú]+)+)\b"
+        
+        if not partes_nome: # Se for uma string vazia após o split
+            return nome_completo
+
+        # 1. Não abreviar se for tudo maiúsculo (sigla) ou terminar com ':' (cabeçalho)
+        if nome_completo.isupper() or nome_completo.endswith(":"):
+            return nome_completo
+
+        # 2. Se a primeira palavra da sequência capitalizada estiver na lista de "não-nomes", não abreviar.
+        if re.match(padrao_palavras_iniciais_nao_nome_regex, partes_nome[0], re.IGNORECASE):
+            return nome_completo
+        
+        # 3. Tentar identificar nomes de pacientes próximos a "DN:" (Data de Nascimento)
+        #    Exemplo: "MARCELO GARCIA DN: 16/01/1970"
+        #    Este é um caso específico e pode precisar de um regex separado se quisermos ser muito precisos.
+        #    Para a lógica global, vamos focar em 2-3 palavras capitalizadas.
+
+        # 4. Abreviar se tiver 2 ou 3 palavras capitalizadas que não se encaixam nas exceções acima
+        #    e não contêm apenas palavras muito curtas (ex: "De Tal") que já seriam tratadas pelo composto.
+        if 1 < len(partes_nome) <= 3: # Foco em 2 ou 3 palavras
+            # Verifica se todas as partes começam com maiúscula
+            if all(p and p[0].isupper() for p in partes_nome):
+                # Remove preposições curtas ANTES de gerar iniciais, mas elas contam para o len(partes_nome)
+                partes_para_iniciais = [p for p in partes_nome if p.lower() not in ["de", "da", "do", "dos", "das", "e"]]
+                
+                # Só abrevia se, após remover preposições, ainda tivermos um nome razoável (ex: pelo menos 2 partes significativas)
+                # e se não for uma única palavra após remover preposições (ex: "De La Cruz" -> "D. L. C.", mas "De" sozinho não)
+                if len(partes_para_iniciais) >= 2 : # Precisa de pelo menos duas partes significativas
+                    iniciais = [p[0] + "." for p in partes_para_iniciais]
+                    return " ".join(iniciais)
+        return nome_completo
+
+    # Padrão para nomes com preposições (ex: "Fulano de Tal", "Maria das Graças")
+    # Aumenta o número de repetições para nomes mais longos com preposições.
+    padrao_nome_composto = r"\b([A-ZÀ-Ú][a-zà-ú'-]+(?:\s+(?:de|da|do|dos|das|e)\s+[A-ZÀ-Ú][a-zà-ú'-]+){1,3})\b"
     texto_anonimizado = re.sub(padrao_nome_composto, substituir_nome_por_iniciais, texto)
-    padrao_nome_geral = r"\b(?!DR\b|DRA\b|Dr\b|Dra\b|SR\b|SRA\b|Sr\b|Sra\b)([A-ZÀ-Ú][a-zà-ú]+(?:\s+[A-ZÀ-Ú][a-zà-ú]+)+)\b"
+    
+    # Padrão geral para sequências de 2 ou 3 palavras capitalizadas,
+    # excluindo títulos comuns (DR, DRA, etc.)
+    # Este regex tenta capturar 2 ou 3 palavras capitalizadas.
+    # A lógica de substituição (substituir_nome_por_iniciais) fará a filtragem final.
+    padrao_nome_geral = r"\b(?!DR\b|DRA\b|Dr\b|Dra\b|SR\b|SRA\b|Sr\b|Sra\b)([A-ZÀ-Ú][a-zà-ú'-]+(?:\s+[A-ZÀ-Ú][a-zà-ú'-]+){1,2})\b"
     texto_anonimizado = re.sub(padrao_nome_geral, substituir_nome_por_iniciais, texto_anonimizado)
+    
     return texto_anonimizado
 
 # --- Funções de Extração Específicas ---
@@ -386,50 +445,37 @@ def extract_hepatograma_pancreas(lines):
             if not tgp_val and i + 2 < len(lines): 
                  m = re.search(NUM_PATTERN, lines[i+2])
                  if m: tgp_val = m.group(1)
-        
-        # Otimização: se já achou TGO e TGP, pode sair mais cedo do loop principal se os outros forem buscados de forma independente
-        # No entanto, a lógica atual já busca os outros independentemente, então este break não é estritamente necessário aqui.
-        # if tgo_val and tgp_val: break 
             
     results["TGO"] = tgo_val
     results["TGP"] = tgp_val
 
-    # Fallbacks mais genéricos com require_unit, caso a lógica acima não pegue
     if not results.get("TGO"): results["TGO"] = extract_labeled_value(lines, ["TGO", "AST"], label_must_be_at_start=False, search_window_lines=1, require_unit="U/L")
     if not results.get("TGP"): results["TGP"] = extract_labeled_value(lines, ["TGP", "ALT"], label_must_be_at_start=False, search_window_lines=1, require_unit="U/L")
     
-    # Extração para GGT e FA - valor na mesma linha do label
     results["GGT"] = extract_labeled_value(lines, ["Gama-Glutamil Transferase", "GGT"], label_must_be_at_start=True, search_window_lines=0, require_unit="U/L")
-    if not results["GGT"]: # Fallback sem require_unit
-        results["GGT"] = extract_labeled_value(lines, ["Gama-Glutamil Transferase", "GGT"], label_must_be_at_start=True, search_window_lines=0)
+    if not results["GGT"]: results["GGT"] = extract_labeled_value(lines, ["Gama-Glutamil Transferase", "GGT"], label_must_be_at_start=True, search_window_lines=0)
 
     results["FA"] = extract_labeled_value(lines, "Fosfatase Alcalina", label_must_be_at_start=True, search_window_lines=0, require_unit="U/L")
-    if not results["FA"]: # Fallback sem require_unit
-        results["FA"] = extract_labeled_value(lines, "Fosfatase Alcalina", label_must_be_at_start=True, search_window_lines=0)
+    if not results["FA"]: results["FA"] = extract_labeled_value(lines, "Fosfatase Alcalina", label_must_be_at_start=True, search_window_lines=0)
 
-    # Extração de Bilirrubinas
-    # Procura pelo header "Bilirrubinas Total, Direta e Indireta" e depois pelos labels específicos
     bilirrubina_section_found = False
     bilirrubina_start_index = -1
     for i, line in enumerate(lines):
         if "bilirrubinas total, direta e indireta" in line.lower():
             bilirrubina_section_found = True
             bilirrubina_start_index = i
-            break # Encontrou a seção, pode parar de procurar o header
+            break
     
-    # Define o escopo de busca para as bilirrubinas
     search_scope_bilirrubinas = lines[bilirrubina_start_index:] if bilirrubina_section_found else lines
 
-    results["BT"] = extract_labeled_value(search_scope_bilirrubinas, "Bilirrubina Total", label_must_be_at_start=True, search_window_lines=1) # search_window_lines=0 se estiver na mesma linha
+    results["BT"] = extract_labeled_value(search_scope_bilirrubinas, "Bilirrubina Total", label_must_be_at_start=True, search_window_lines=1) 
     results["BD"] = extract_labeled_value(search_scope_bilirrubinas, "Bilirrubina Direta", label_must_be_at_start=True, search_window_lines=1)
     results["BI"] = extract_labeled_value(search_scope_bilirrubinas, "Bilirrubina Indireta", label_must_be_at_start=True, search_window_lines=1)
 
-    # Fallback se não encontrou com o header principal
     if not results.get("BT"): results["BT"] = extract_labeled_value(lines, "Bilirrubina Total", label_must_be_at_start=True, search_window_lines=1)
     if not results.get("BD"): results["BD"] = extract_labeled_value(lines, "Bilirrubina Direta", label_must_be_at_start=True, search_window_lines=1)
     if not results.get("BI"): results["BI"] = extract_labeled_value(lines, "Bilirrubina Indireta", label_must_be_at_start=True, search_window_lines=1)
 
-    # Albumina, Amilase, Lipase (mantendo a lógica anterior)
     results["ALB"] = extract_labeled_value(lines, "Albumina", label_must_be_at_start=True, search_window_lines=1)
     results["AML"] = extract_labeled_value(lines, "Amilase", label_must_be_at_start=True, search_window_lines=1)
     results["LIP"] = extract_labeled_value(lines, "Lipase", label_must_be_at_start=True, search_window_lines=1)
@@ -885,7 +931,7 @@ Orientações de Alta (Sinais de Alerta para Retorno ao PS):
 """
     return gerar_resposta_ia(prompt)
 
-def gerar_diagnosticos_diferenciais_ia(caso_clinico_original): # Função adicionada
+def gerar_diagnosticos_diferenciais_ia(caso_clinico_original): 
     caso_clinico = anonimizar_texto(caso_clinico_original)
     prompt = f"""Você é um médico hospitalista experiente.
 Com base no caso clínico detalhado abaixo (incluindo queixas, sinais, sintomas, alterações de exame físico e exames complementares), faça o seguinte:
@@ -904,10 +950,10 @@ Análise de Diagnósticos Diferenciais:
 
 # --- Função Principal de Análise de Exames (parse_lab_report) ---
 def parse_lab_report(text):
-    subs = [(r"Creatinina(?!\s*Kinase|\s*quinase)", "Creatinina ")] # Usando r"" para regex
-    for p, r in subs: text = re.sub(f"(?i){p}", r, text) # f-string aqui é ok pois p é um regex já raw
+    # Correção do SyntaxWarning: usar r"" para raw strings em regex com \s
+    subs = [(r"Creatinina(?!\s*Kinase|\s*quinase)", "Creatinina ")] 
+    for p, r in subs: text = re.sub(f"(?i){p}", r, text)
     
-    # Padronização de termos ANTES de dividir em linhas
     text = re.sub(r"(?i)ur[eé]ia", "Ureia", text)
     text = re.sub(r"(?i)pot[aá]ssio", "Potássio", text)
     text = re.sub(r"(?i)s[oó]dio", "Sódio", text)
