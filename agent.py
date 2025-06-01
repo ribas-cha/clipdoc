@@ -366,35 +366,35 @@ def extract_hepatograma_pancreas(lines):
     results = {}
     tgo_val, tgp_val = "", ""
     
-    # TGO
     for i, line in enumerate(lines):
-        if "Transaminase oxalacética - TGO" in line or ("Aspartato amino transferase" in line and "TGO" in line):
+        if not tgo_val and ("Transaminase oxalacética - TGO" in line or ("Aspartato amino transferase" in line and "TGO" in line.upper())):
             for offset in range(1, 4): 
                 if i + offset < len(lines):
                     target_line = lines[i + offset]
                     match_ul = re.match(r"^\s*" + NUM_PATTERN + r"\s*U/L", target_line)
-                    if match_ul:
-                        tgo_val = match_ul.group(1)
-                        break
-            if tgo_val: break 
-    if not tgo_val: 
-        tgo_val = extract_labeled_value(lines, ["TGO", "AST"], label_must_be_at_start=False, search_window_lines=1, require_unit="U/L")
-    results["TGO"] = tgo_val
-
-    # TGP
-    for i, line in enumerate(lines):
-        if "Transaminase pirúvica - TGP" in line or ("Alanina amino transferase" in line and "TGP" in line):
+                    if match_ul: tgo_val = match_ul.group(1); break
+            if not tgo_val and i + 2 < len(lines): # Fallback se não encontrou com U/L
+                 m = re.search(NUM_PATTERN, lines[i+2])
+                 if m: tgo_val = m.group(1)
+        
+        if not tgp_val and ("Transaminase pirúvica - TGP" in line or ("Alanina amino transferase" in line and "TGP" in line.upper())):
             for offset in range(1, 4):
                 if i + offset < len(lines):
                     target_line = lines[i + offset]
                     match_ul = re.match(r"^\s*" + NUM_PATTERN + r"\s*U/L", target_line)
-                    if match_ul:
-                        tgp_val = match_ul.group(1)
-                        break
-            if tgp_val: break
-    if not tgp_val:
-        tgp_val = extract_labeled_value(lines, ["TGP", "ALT"], label_must_be_at_start=False, search_window_lines=1, require_unit="U/L")
+                    if match_ul: tgp_val = match_ul.group(1); break
+            if not tgp_val and i + 2 < len(lines): # Fallback
+                 m = re.search(NUM_PATTERN, lines[i+2])
+                 if m: tgp_val = m.group(1)
+        
+        if tgo_val and tgp_val and results.get("GGT") and results.get("FA") and results.get("BT"): # Otimização
+            break 
+            
+    results["TGO"] = tgo_val
     results["TGP"] = tgp_val
+
+    if not results.get("TGO"): results["TGO"] = extract_labeled_value(lines, ["TGO", "AST"], label_must_be_at_start=False, search_window_lines=1, require_unit="U/L")
+    if not results.get("TGP"): results["TGP"] = extract_labeled_value(lines, ["TGP", "ALT"], label_must_be_at_start=False, search_window_lines=1, require_unit="U/L")
     
     results["GGT"] = extract_labeled_value(lines, ["Gama-Glutamil Transferase", "GGT"], label_must_be_at_start=True, search_window_lines=0, require_unit="U/L")
     if not results["GGT"]: results["GGT"] = extract_labeled_value(lines, ["Gama-Glutamil Transferase", "GGT"], label_must_be_at_start=True, search_window_lines=0)
@@ -410,15 +410,11 @@ def extract_hepatograma_pancreas(lines):
             bilirrubina_start_index = i
             break
     
-    if bilirrubina_section_found:
-        search_lines_bilirrubinas = lines[bilirrubina_start_index:]
-        results["BT"] = extract_labeled_value(search_lines_bilirrubinas, "Bilirrubina Total", label_must_be_at_start=True, search_window_lines=1) 
-        results["BD"] = extract_labeled_value(search_lines_bilirrubinas, "Bilirrubina Direta", label_must_be_at_start=True, search_window_lines=1)
-        results["BI"] = extract_labeled_value(search_lines_bilirrubinas, "Bilirrubina Indireta", label_must_be_at_start=True, search_window_lines=1)
-    else: 
-        results["BT"] = extract_labeled_value(lines, "Bilirrubina Total", label_must_be_at_start=True, search_window_lines=1)
-        results["BD"] = extract_labeled_value(lines, "Bilirrubina Direta", label_must_be_at_start=True, search_window_lines=1)
-        results["BI"] = extract_labeled_value(lines, "Bilirrubina Indireta", label_must_be_at_start=True, search_window_lines=1)
+    search_scope_bilirrubinas = lines[bilirrubina_start_index:] if bilirrubina_section_found else lines
+
+    results["BT"] = extract_labeled_value(search_scope_bilirrubinas, "Bilirrubina Total", label_must_be_at_start=True, search_window_lines=1)
+    results["BD"] = extract_labeled_value(search_scope_bilirrubinas, "Bilirrubina Direta", label_must_be_at_start=True, search_window_lines=1)
+    results["BI"] = extract_labeled_value(search_scope_bilirrubinas, "Bilirrubina Indireta", label_must_be_at_start=True, search_window_lines=1)
 
     results["ALB"] = extract_labeled_value(lines, "Albumina", label_must_be_at_start=True, search_window_lines=1)
     results["AML"] = extract_labeled_value(lines, "Amilase", label_must_be_at_start=True, search_window_lines=1)
@@ -451,7 +447,7 @@ def extract_gasometria(lines):
             gas_header_found = True
             break
     
-    if not gas_header_found:
+    if not gas_header_found: # Fallback se o header completo não for encontrado
         for i, line in enumerate(lines):
             l_line = line.lower()
             if "gasometria" in l_line: 
@@ -472,7 +468,7 @@ def extract_gasometria(lines):
     }
                
     # Itera pelas linhas A PARTIR da linha SEGUINTE ao header da gasometria
-    for line_num in range(gas_idx + 1, min(gas_idx + 1 + len(gas_map) + 15, len(lines))): # Aumentada janela de busca
+    for line_num in range(gas_idx + 1, min(gas_idx + 1 + len(gas_map) + 15, len(lines))): 
         current_line = lines[line_num]
         
         if any(hdr in current_line.lower() for hdr in ["hemograma", "coagulograma", "bioquimica", "cultura", "urina tipo i", "assinado eletronicamente", "responsável:", "locais de execução"]):
@@ -482,8 +478,7 @@ def extract_gasometria(lines):
             if out_key in results and results[out_key]: 
                 continue
 
-            # Padrão: label no início da linha (após espaços), seguido por quaisquer caracteres não numéricos (espaços, :, ., -), depois o valor
-            pattern = r"^\s*" + re.escape(label_search) + r"[^\d<>-]*" + GAS_NUM_PATTERN
+            pattern = r"^\s*" + re.escape(label_search) + r"(?:[\s:.-]+)\s*" + GAS_NUM_PATTERN
             match = re.search(pattern, current_line, re.IGNORECASE)
             if match:
                 results[out_key] = match.group(1) 
@@ -952,7 +947,6 @@ def parse_lab_report(text):
 
     # Lógica para formatar a saída da Gasometria
     gas_pfx = ""
-    # Verifica se há chaves de gasometria com prefixo GA_ ou GV_
     if any(k.startswith("GA_") for k in all_res.keys()):
         gas_pfx = "GA_"
     elif any(k.startswith("GV_") for k in all_res.keys()):
@@ -961,7 +955,7 @@ def parse_lab_report(text):
     gas_params_output = []
     gas_header = ""
 
-    if gas_pfx: # Se um prefixo foi determinado
+    if gas_pfx: 
         gas_header = "Gasometria Arterial: " if gas_pfx == "GA_" else "Gasometria Venosa: "
         gas_order_map = { 
             "pH": "pH_gas", "pCO2": "pCO2_gas", "pO2": "pO2_gas", 
@@ -970,11 +964,10 @@ def parse_lab_report(text):
         }
         for display_label, dict_key_suffix in gas_order_map.items():
             full_key_to_check = gas_pfx + dict_key_suffix 
-            if full_key_to_check in all_res:
+            if full_key_to_check in all_res and all_res[full_key_to_check]: # Adicionado 'and all_res[full_key_to_check]'
                 gas_params_output.append(format_value_with_alert(display_label, all_res[full_key_to_check], dict_key_suffix))
     
-    elif any("_gas" in k for k in all_res.keys() if not k.startswith("GA_") and not k.startswith("GV_")): 
-        # Caso encontre parâmetros de gasometria sem prefixo GA_ ou GV_
+    elif any("_gas" in k and all_res[k] for k in all_res.keys() if not k.startswith("GA_") and not k.startswith("GV_")): 
         gas_header = "Gasometria: "
         gas_order_map = { 
             "pH": "pH_gas", "pCO2": "pCO2_gas", "pO2": "pO2_gas", 
@@ -982,10 +975,10 @@ def parse_lab_report(text):
             "SatO2": "SatO2_gas", "Lac": "Lac_gas", "cCO2": "cCO2_gas"
         }
         for display_label, dict_key_suffix in gas_order_map.items():
-            if dict_key_suffix in all_res: # Verifica a chave base sem prefixo
+            if dict_key_suffix in all_res and all_res[dict_key_suffix]: 
                  gas_params_output.append(format_value_with_alert(display_label, all_res[dict_key_suffix], dict_key_suffix))
     
-    if gas_params_output: # Só adiciona à seção se houver parâmetros extraídos
+    if gas_params_output: 
         out_sections["GASOMETRIA"].append(gas_header + " // ".join(gas_params_output))
 
 
