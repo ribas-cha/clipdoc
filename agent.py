@@ -220,7 +220,7 @@ def extract_datetime_info(lines):
             date_part_full = m_specific.group(1)
             time_part = m_specific.group(2)
             try:
-                dt_obj_date = date_parser.parse(date_part_full, dayfirst=True, fuzzy=False)
+                dt_obj_date = date_parser.parse(date_part_full, dayfirst=True, fuzzy=False) 
                 day_month = dt_obj_date.strftime("%d/%m")
                 time_parts_match = re.match(r"(\d{1,2}):(\d{2})", time_part)
                 if time_parts_match:
@@ -236,7 +236,7 @@ def extract_datetime_info(lines):
                         m_part = time_parts_match.group(2).zfill(2)
                         return f"{day_month_match.group(1)} {h_part}h{m_part}"
     
-    for line_idx, line in enumerate(lines[:20]):
+    for line_idx, line in enumerate(lines[:20]): 
         m_generic = re.search(
             r"(data|coleta|recebimento|realização)(?:[^0-9\n<>-]*?)(\d{1,2}[./-]\d{1,2}(?:[./-]\d{2,4})?)?" 
             r"(?:[^0-9\n<>-]*?)(\d{1,2}[:hH]\d{1,2})", 
@@ -246,6 +246,7 @@ def extract_datetime_info(lines):
         if m_generic:
             date_str_generic = m_generic.group(2)
             time_str_generic = m_generic.group(3)
+            
             formatted_date = ""
             if date_str_generic:
                 try:
@@ -278,7 +279,7 @@ def extract_datetime_info(lines):
                             formatted_date_only = dt_obj_date_only.strftime("%d/%m")
                             return f"{formatted_date_only} {formatted_time}"
                         except: continue
-    return ""
+    return "" 
 
 
 def extract_hemograma_completo(lines):
@@ -552,29 +553,47 @@ def extract_urina_tipo_i(lines):
 
 def extract_culturas(lines):
     found_cultures = []
-    processed_block_indices = set() 
-    germe_regex = r"([A-Z][a-z]+\s(?:cf\.\s)?[A-Z]?[a-z]+)" 
-    current_culture_block_lines = []
-    block_start_index = -1
-    for i, line_content in enumerate(lines):
+    germe_regex = r"([A-Z][a-z]+\s(?:cf\.\s)?[A-Z]?[a-z]+)"
+    i = 0
+    while i < len(lines):
+        line_content = lines[i]
         l_line = line_content.lower()
-        is_new_culture_header = "cultura de urina" in l_line or \
-                                "urocultura" in l_line or \
-                                "hemocultura" in l_line
-        if is_new_culture_header:
-            if block_start_index != -1 and current_culture_block_lines: 
-                culture_data = process_single_culture_block(current_culture_block_lines, germe_regex)
-                if culture_data: found_cultures.append(culture_data)
-                for proc_idx in range(block_start_index, i): processed_indices.add(proc_idx) 
-            current_culture_block_lines = [] 
+        
+        is_culture_header = "cultura de urina" in l_line or \
+                            "urocultura" in l_line or \
+                            "hemocultura" in l_line
+        
+        if is_culture_header:
             block_start_index = i
-        if block_start_index != -1 and i not in processed_indices: 
-            current_culture_block_lines.append(line_content)
-    if current_culture_block_lines and block_start_index != -1: 
-        culture_data = process_single_culture_block(current_culture_block_lines, germe_regex)
-        if culture_data: found_cultures.append(culture_data)
-        for proc_idx in range(block_start_index, len(lines)): processed_indices.add(proc_idx)
-
+            current_culture_block_lines = [line_content]
+            
+            # Find the end of the block
+            j = i + 1
+            while j < len(lines):
+                next_line_lower = lines[j].lower()
+                is_next_block_header = "cultura de urina" in next_line_lower or \
+                                       "urocultura" in next_line_lower or \
+                                       "hemocultura" in next_line_lower or \
+                                       "hemograma" in next_line_lower or \
+                                       "coagulograma" in next_line_lower or \
+                                       "bioquimica" in next_line_lower or \
+                                       "urina tipo i" in next_line_lower or \
+                                       "assinado eletronicamente" in next_line_lower
+                
+                if is_next_block_header:
+                    break
+                current_culture_block_lines.append(lines[j])
+                j += 1
+            
+            culture_data = process_single_culture_block(current_culture_block_lines, germe_regex)
+            if culture_data:
+                found_cultures.append(culture_data)
+            
+            i = j
+            continue 
+            
+        i += 1
+        
     final_cultures = []
     seen_types_and_results = set()
     for cult in found_cultures:
@@ -776,7 +795,6 @@ def evoluir_paciente_enfermaria_ia_fase2(resumo_ia_fase1, dados_medico_hoje, evo
 
     prompt = f"""Você é um médico hospitalista experiente.
 Sua tarefa é gerar uma nota de EVOLUÇÃO MÉDICA para HOJE.
-Use o template fornecido abaixo como base.
 MANTENHA OS SEGUINTES CAMPOS EXATAMENTE COMO ESTÃO NA 'Evolução Anterior Original' (fornecida em (2)), A MENOS QUE HAJA INFORMAÇÃO CONTRADITÓRIA DIRETA NOS 'Novos dados e observações do médico para a evolução de HOJE' (fornecidos em (3)) que claramente substitua o conteúdo anterior:
 #ID, #HD (Hipótese Diagnóstica), #AP (Antecedentes Patológicos), #HDA (História da Doença Atual - use o conteúdo de #HDA, #HMA ou #HPMA da evolução anterior para este campo), #MUC (Medicações em Uso Contínuo), #ALERGIAS, #ATB (Antibióticos), #TEV (Profilaxia para TEV).
 O campo #CUIDADOS PALIATIVOS: deve ser omitido da evolução final se não houver informação relevante para ele na 'Evolução Anterior Original' ou se o conteúdo indicar que não se aplica (ex: "não", "ausente", "ndn", ou se estiver vazio).
