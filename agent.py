@@ -39,8 +39,10 @@ VALORES_REFERENCIA = {
     "TTPA_R": {"min": 0.90, "max": 1.25, "crit_high": 3.0},
     "TGO": {"min": 15, "max": 37},
     "TGP": {"min": 6, "max": 45},
+    "GGT": {"max": 71}, # Exemplo Masculino
+    "FA": {"max": 129}, # Exemplo Masculino
     "BT": {"min": 0.30, "max": 1.20},
-    "BD": {"max": 0.20},
+    "BD": {"max": 0.30},
     "BI": {"min": 0.10, "max": 1.00},
     "ALB": {"min": 3.5, "max": 5.2},
     "AML": {"max": 100},
@@ -80,7 +82,7 @@ if not GOOGLE_API_KEY:
 if GOOGLE_API_KEY:
     try:
         genai.configure(api_key=GOOGLE_API_KEY)
-        gemini_model = genai.GenerativeModel('gemini-1.5-flash-latest')
+        gemini_model = genai.GenerativeModel('gemini-2.5-flash')
         gemini_available = True
     except Exception as e:
         st.session_state.gemini_config_error = f"Erro ao configurar a API do Gemini: {e}. Verifique sua chave de API."
@@ -92,14 +94,10 @@ else:
 def clean_number_format(value_str):
     if not value_str: return ""
     s = str(value_str).strip().lstrip('<>')
-    # Se ambos os separadores estiverem presentes, assume-se que '.' é de milhar e ',' é decimal.
     if '.' in s and ',' in s:
         s = s.replace('.', '').replace(',', '.')
-    # Se apenas a vírgula estiver presente, ela é o separador decimal.
     elif ',' in s:
         s = s.replace(',', '.')
-    # Se apenas o ponto estiver presente (caso do Tecnolab), ele já é o separador decimal, então não fazemos nada.
-    # A lógica anterior que removia pontos foi retirada pois causava o problema.
     return s
 
 def convert_to_float(cleaned_value_str):
@@ -184,7 +182,6 @@ def extract_labeled_value(lines, labels_to_search, pattern_to_extract=NUM_PATTER
 
 # --- Função de Anonimização ---
 def anonimizar_texto(texto_original):
-    # (A função de anonimização permanece inalterada)
     linhas_processadas = []
     for linha in texto_original.splitlines():
         linha_strip = linha.strip()
@@ -319,10 +316,12 @@ def extract_hemograma_completo(lines, is_tecnolab):
         erit_idx = next((i for i, l in enumerate(lines) if "eritrograma" in l.lower()), -1)
         if erit_idx != -1:
             search_erit = lines[erit_idx:erit_idx+10]
-            for k, lbls in [("Hb", ["Hemoglobina"]), ("Ht", ["Hematócrito"]), ("VCM", "VCM"), ("HCM", "HCM"), ("CHCM", "CHCM"), ("RDW", "RDW")]:
+            # CORREÇÃO: A lógica que causava o erro foi generalizada para funcionar corretamente.
+            for k, lbls_config in [("Hb", ["Hemoglobina"]), ("Ht", ["Hematócrito"]), ("VCM", "VCM"), ("HCM", "HCM"), ("CHCM", "CHCM"), ("RDW", "RDW")]:
+                search_label = lbls_config[0] if isinstance(lbls_config, list) else lbls_config
                 for line in search_erit:
-                    # Padrão Tecnolab: VALOR ... NOME ...
-                    match = re.search(r"^\s*" + NUM_PATTERN + r".*?" + lbls[0] if isinstance(lbls, list) else lbls, line, re.IGNORECASE)
+                    pattern = r"^\s*" + NUM_PATTERN + r".*?" + re.escape(search_label)
+                    match = re.search(pattern, line, re.IGNORECASE)
                     if match:
                         results[k] = match.group(1)
                         break
@@ -444,12 +443,9 @@ def extract_coagulograma(lines, is_tecnolab):
     return results
 
 def extract_tecnolab_generic(lines, labels):
-    """Função auxiliar para extrair valores do padrão Tecnolab: NOME \n RESULTADO: VALOR."""
     if isinstance(labels, str): labels = [labels]
     for i, line in enumerate(lines):
-        # Verifica se a linha é o cabeçalho do exame
         if any(label.lower() in line.lower() for label in labels) and "resultado" not in line.lower():
-            # Procura pelo resultado nas próximas linhas
             for j in range(i, min(i + 4, len(lines))):
                 if "RESULTADO:" in lines[j]:
                     match = re.search(r"RESULTADO:\s*" + NUM_PATTERN, lines[j], re.IGNORECASE)
@@ -471,7 +467,7 @@ def extract_funcao_renal_e_eletrólitos(lines, is_tecnolab):
         results["K"] = extract_tecnolab_generic(lines, ["DOSAGEM DE POTÁSSIO", "POTÁSSIO"])
         results["Na"] = extract_tecnolab_generic(lines, ["DOSAGEM DE SÓDIO", "SÓDIO"])
         results["Mg"] = extract_tecnolab_generic(lines, ["DOSAGEM DE MAGNÉSIO", "MAGNÉSIIO"])
-        results["CaT"] = extract_tecnolab_generic(lines, "CALCIO") # Cálcio Total
+        results["CaT"] = extract_tecnolab_generic(lines, "CALCIO") 
         results["Gli"] = extract_tecnolab_generic(lines, ["DOSAGEM DE GLICOSE", "GLICOSE"])
         return results
 
@@ -503,9 +499,12 @@ def extract_hepatograma_pancreas(lines, is_tecnolab):
     if is_tecnolab:
         results["TGO"] = extract_tecnolab_generic(lines, "TRANSAMINASE OXALACETICA - TGO")
         results["TGP"] = extract_tecnolab_generic(lines, "TRANSAMINASE PIRUVICA (TGP)")
+        results["FA"] = extract_tecnolab_generic(lines, "FOSFATASE ALCALINA")
+        results["GGT"] = extract_tecnolab_generic(lines, "GAMA-GLUTAMIL TRANSFERASE")
+        results["AML"] = extract_tecnolab_generic(lines, "AMILASE")
         
         bili_idx = next((i for i, l in enumerate(lines) if "bilirrubina" in l.lower() and "resultado" in l.lower()), -1)
-        if bili_idx == -1: # Tenta encontrar sem a palavra resultado
+        if bili_idx == -1:
              bili_idx = next((i for i, l in enumerate(lines) if l.strip().upper() == "BILIRRUBINA"),-1)
         if bili_idx != -1:
             search_bili = lines[bili_idx : bili_idx + 5]
@@ -808,7 +807,6 @@ def process_single_culture_block(block_lines, germe_regex):
     return current_culture_data
 
 # --- Funções de Interação com IA Gemini ---
-# (As funções de IA permanecem inalteradas)
 def gerar_resposta_ia(prompt_text):
     if not gemini_available or not gemini_model:
         return "Funcionalidade de IA indisponível. Verifique a configuração da API Key."
@@ -1224,21 +1222,17 @@ def parse_lab_report(text):
 
 
 # --- Interface Streamlit ---
-# (A interface Streamlit permanece inalterada)
 st.title("🧪 ClipDoc")
 st.markdown("""
 Cole o texto do exame laboratorial no campo abaixo.
 A formatação da saída busca ser concisa para prontuários. Valores alterados são marcados com `*` e críticos com `(!)`.
 """)
 
-# Avisos sobre API Key (somente se a chave não for de 'secrets' e não estiver definida localmente)
 if not GOOGLE_API_KEY and api_key_source != "secrets":
     st.warning("Chave da API do Google não configurada para desenvolvimento local. Funcionalidades de IA estarão desabilitadas. Defina-a na variável `GOOGLE_API_KEY_LOCAL_FALLBACK` no código ou como variável de ambiente `GOOGLE_API_KEY`.")
 elif GOOGLE_API_KEY and not gemini_available and 'gemini_config_error' in st.session_state:
      st.error(st.session_state.gemini_config_error)
 
-
-# Inicialização do estado da sessão para IA
 if "ia_output_evolucao_enf_fase1" not in st.session_state:
     st.session_state.ia_output_evolucao_enf_fase1 = ""
 if "evolucao_anterior_original_para_fase2" not in st.session_state:
@@ -1255,13 +1249,11 @@ if "ia_output_resumo_alta" not in st.session_state:
     st.session_state.ia_output_resumo_alta = ""
 if "ia_output_orientacoes_alta" not in st.session_state:
     st.session_state.ia_output_orientacoes_alta = ""
-if "ia_output_diagnosticos_diferenciais" not in st.session_state: # Novo estado
+if "ia_output_diagnosticos_diferenciais" not in st.session_state:
     st.session_state.ia_output_diagnosticos_diferenciais = ""
-if "ia_input_caso_diagnostico" not in st.session_state: # Novo estado para o input da nova função
+if "ia_input_caso_diagnostico" not in st.session_state:
     st.session_state.ia_input_caso_diagnostico = ""
 
-
-# Aba principal para extração de exames
 tab1, tab2 = st.tabs(["Extrair Exames", "🧑‍⚕️ Agente IA Hospitalista"])
 
 with tab1:
@@ -1342,7 +1334,7 @@ with tab1:
             """
         )
 
-with tab2: # Aba do Agente IA
+with tab2:
     st.header("🧑‍⚕️ Agente IA Hospitalista")
     st.write("Use a IA para auxiliar em tarefas como resumir evoluções, preencher admissões e mais.")
 
@@ -1355,13 +1347,12 @@ with tab2: # Aba do Agente IA
             "Auxiliar na Admissão de Paciente",
             "Redigir Resumo de Alta",
             "Gerar Orientações de Alta",
-            "Diagnósticos Diferenciais" # Nova opção
+            "Diagnósticos Diferenciais"
         ]
         tarefa_ia_selecionada = st.selectbox("Qual tarefa o Agente IA deve realizar?", ia_task_options, key="ia_task_selector_tab2")
 
         if tarefa_ia_selecionada == "Evoluir Paciente (Enfermaria - Interativo)":
             st.subheader("Auxiliar na Evolução de Paciente (Interativo)")
-            # Input da evolução anterior
             if 'evolucao_anterior_input_fase1' not in st.session_state:
                 st.session_state.evolucao_anterior_input_fase1 = ""
 
@@ -1373,7 +1364,7 @@ with tab2: # Aba do Agente IA
                     key="ia_evol_enf_input_fase1_widget"
                 )
                 if st.button("Analisar Evolução Anterior com IA", key="btn_ia_evol_enf_fase1"):
-                    if st.session_state.evolucao_anterior_input_fase1: # Usa o valor do session_state
+                    if st.session_state.evolucao_anterior_input_fase1:
                         with st.spinner("IA processando a evolução anterior..."):
                             st.session_state.evolucao_anterior_original_para_fase2 = st.session_state.evolucao_anterior_input_fase1
                             st.session_state.ia_output_evolucao_enf_fase1 = evoluir_paciente_enfermaria_ia_fase1(st.session_state.evolucao_anterior_input_fase1)
@@ -1395,7 +1386,6 @@ with tab2: # Aba do Agente IA
                 col_btn1, col_btn2 = st.columns(2)
                 with col_btn1:
                     if st.button("Gerar Evolução Final com IA", key="btn_ia_evol_enf_fase2"):
-                        # O valor já está em st.session_state.ia_dados_medico_hoje devido ao 'value' do text_area
                         if st.session_state.ia_dados_medico_hoje:
                             with st.spinner("IA gerando a evolução final..."):
                                 st.session_state.ia_output_evolucao_final = evoluir_paciente_enfermaria_ia_fase2(
@@ -1408,7 +1398,7 @@ with tab2: # Aba do Agente IA
                 with col_btn2:
                     if st.button("Voltar/Reiniciar Evolução Interativa", key="btn_reset_evol_interativa"):
                         st.session_state.ia_fase_evolucao_interativa = 1
-                        st.session_state.evolucao_anterior_input_fase1 = "" # Limpa o input da fase 1
+                        st.session_state.evolucao_anterior_input_fase1 = ""
                         st.session_state.ia_output_evolucao_enf_fase1 = ""
                         st.session_state.ia_dados_medico_hoje = ""
                         st.session_state.ia_output_evolucao_final = ""
@@ -1424,7 +1414,7 @@ with tab2: # Aba do Agente IA
                     components.html(f"""<textarea id="cClipEvolFinal" style="opacity:0;position:absolute;left:-9999px;top:-9999px;">{st.session_state.ia_output_evolucao_final.replace("'", "&apos;").replace('"','&quot;')}</textarea><button onclick="var t=document.getElementById('cClipEvolFinal');t.select();t.setSelectionRange(0,99999);try{{var s=document.execCommand('copy');var m=document.createElement('div');m.textContent=s?'Evolução copiada!':'Falha.';m.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);padding:10px 20px;background-color:'+(s?'#28a745':'#dc3545')+';color:white;border-radius:5px;z-index:1000;';document.body.appendChild(m);setTimeout(function(){{document.body.removeChild(m);}},2000);}}catch(e){{alert('Não foi possível copiar.');}}" style="padding:10px 15px;background-color:#28a745;color:white;border:none;border-radius:5px;cursor:pointer;width:100%;margin-top:10px;">📋 Copiar Evolução Final</button>""", height=65)
                 if st.button("Iniciar Nova Evolução Interativa", key="btn_nova_evol_interativa"):
                     st.session_state.ia_fase_evolucao_interativa = 1
-                    st.session_state.evolucao_anterior_input_fase1 = "" # Limpa o input da fase 1
+                    st.session_state.evolucao_anterior_input_fase1 = ""
                     st.session_state.ia_output_evolucao_enf_fase1 = ""
                     st.session_state.ia_dados_medico_hoje = ""
                     st.session_state.ia_output_evolucao_final = ""
@@ -1452,7 +1442,7 @@ with tab2: # Aba do Agente IA
                 components.html(f"""<textarea id="cClipAdmissaoTab2" style="opacity:0;position:absolute;left:-9999px;top:-9999px;">{st.session_state['ia_output_admissao'].replace("'", "&apos;").replace('"',"&quot;")}</textarea><button onclick="var t=document.getElementById('cClipAdmissaoTab2');t.select();t.setSelectionRange(0,99999);try{{var s=document.execCommand('copy');var m=document.createElement('div');m.textContent=s?'Admissão copiada!':'Falha.';m.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);padding:10px 20px;background-color:'+(s?'#28a745':'#dc3545')+';color:white;border-radius:5px;z-index:1000;';document.body.appendChild(m);setTimeout(function(){{document.body.removeChild(m);}},2000);}}catch(e){{alert('Não foi possível copiar.');}}" style="padding:10px 15px;background-color:#28a745;color:white;border:none;border-radius:5px;cursor:pointer;width:100%;margin-top:10px;">📋 Copiar Rascunho da Admissão</button>""", height=65)
                 if st.button("Limpar Rascunho da Admissão", key="btn_clear_ia_adm_tab2"):
                     st.session_state.ia_output_admissao = ""
-                    st.session_state.ia_input_admissao_caso = "" # Limpa o input também
+                    st.session_state.ia_input_admissao_caso = ""
                     st.rerun()
 
         elif tarefa_ia_selecionada == "Redigir Resumo de Alta":
@@ -1477,7 +1467,7 @@ with tab2: # Aba do Agente IA
                 components.html(f"""<textarea id="cClipResumoAlta" style="opacity:0;position:absolute;left:-9999px;top:-9999px;">{st.session_state.ia_output_resumo_alta.replace("'", "&apos;").replace('"',"&quot;")}</textarea><button onclick="var t=document.getElementById('cClipResumoAlta');t.select();t.setSelectionRange(0,99999);try{{var s=document.execCommand('copy');var m=document.createElement('div');m.textContent=s?'Resumo copiado!':'Falha.';m.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);padding:10px 20px;background-color:'+(s?'#28a745':'#dc3545')+';color:white;border-radius:5px;z-index:1000;';document.body.appendChild(m);setTimeout(function(){{document.body.removeChild(m);}},2000);}}catch(e){{alert('Não foi possível copiar.');}}" style="padding:10px 15px;background-color:#007bff;color:white;border:none;border-radius:5px;cursor:pointer;width:100%;margin-top:10px;">📋 Copiar Resumo de Alta</button>""", height=65)
                 if st.button("Limpar Resumo de Alta", key="btn_clear_ia_resumo_alta"):
                     st.session_state.ia_output_resumo_alta = ""
-                    st.session_state.ia_input_ultima_evolucao_alta = "" # Limpa o input
+                    st.session_state.ia_input_ultima_evolucao_alta = ""
                     st.rerun()
 
         elif tarefa_ia_selecionada == "Gerar Orientações de Alta":
@@ -1502,7 +1492,7 @@ with tab2: # Aba do Agente IA
                 components.html(f"""<textarea id="cClipOrientAlta" style="opacity:0;position:absolute;left:-9999px;top:-9999px;">{st.session_state.ia_output_orientacoes_alta.replace("'", "&apos;").replace('"',"&quot;")}</textarea><button onclick="var t=document.getElementById('cClipOrientAlta');t.select();t.setSelectionRange(0,99999);try{{var s=document.execCommand('copy');var m=document.createElement('div');m.textContent=s?'Orientações copiadas!':'Falha.';m.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);padding:10px 20px;background-color:'+(s?'#28a745':'#dc3545')+';color:white;border-radius:5px;z-index:1000;';document.body.appendChild(m);setTimeout(function(){{document.body.removeChild(m);}},2000);}}catch(e){{alert('Não foi possível copiar.');}}" style="padding:10px 15px;background-color:#007bff;color:white;border:none;border-radius:5px;cursor:pointer;width:100%;margin-top:10px;">📋 Copiar Orientações de Alta</button>""", height=65)
                 if st.button("Limpar Orientações de Alta", key="btn_clear_ia_orientacoes_alta"):
                     st.session_state.ia_output_orientacoes_alta = ""
-                    st.session_state.ia_input_caso_orientacoes = "" # Limpa o input
+                    st.session_state.ia_input_caso_orientacoes = ""
                     st.rerun()
 
         elif tarefa_ia_selecionada == "Diagnósticos Diferenciais":
