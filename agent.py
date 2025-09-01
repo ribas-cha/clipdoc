@@ -46,12 +46,12 @@ VALORES_REFERENCIA = {
     "AML": {"max": 100},
     "LIP": {"max": 160},
     "Vanco": {"min": 15.0, "max": 20.0, "crit_low": 10.0, "crit_high": 25.0},
-    "pH_gas": {"min": 7.35, "max": 7.45, "crit_low": 7.0, "crit_high": 7.8},
+    "pH_gas": {"min": 7.35, "max": 7.45, "crit_low": 7.2, "crit_high": 7.6},
     "pCO2_gas": {"min": 35.0, "max": 45.0, "crit_low": 20, "crit_high": 80},
     "HCO3_gas": {"min": 21.0, "max": 28.0, "crit_low": 10, "crit_high": 40},
     "BE_gas": {"min": -3.0, "max": 3.0},
-    "pO2_gas": {"min": 80.0, "max": 95.0},
-    "SatO2_gas": {"min": 95.0, "max": 99.0},
+    "pO2_gas": {"min": 80.0, "max": 95.0, "crit_low": 40},
+    "SatO2_gas": {"min": 95.0, "max": 99.0, "crit_low": 88},
     "Lac_gas": {"max": 2.0, "crit_high": 4.0},
     "Lac": {"min": 0.50, "max": 1.60, "crit_high": 4.0},
     "cCO2_gas": {"min": 23.0, "max": 29.0}
@@ -92,14 +92,15 @@ else:
 def clean_number_format(value_str):
     if not value_str: return ""
     s = str(value_str).strip().lstrip('<>')
-    # Trata números como "97.000" (milhar) para "97000"
-    if '.' in s and ',' not in s and len(s.split('.')[-1]) == 3:
-        s = s.replace('.', '')
-    # Trata vírgula como separador decimal
-    elif ',' in s:
+    # Se ambos os separadores estiverem presentes, assume-se que '.' é de milhar e ',' é decimal.
+    if '.' in s and ',' in s:
         s = s.replace('.', '').replace(',', '.')
+    # Se apenas a vírgula estiver presente, ela é o separador decimal.
+    elif ',' in s:
+        s = s.replace(',', '.')
+    # Se apenas o ponto estiver presente (caso do Tecnolab), ele já é o separador decimal, então não fazemos nada.
+    # A lógica anterior que removia pontos foi retirada pois causava o problema.
     return s
-
 
 def convert_to_float(cleaned_value_str):
     if not cleaned_value_str: return None
@@ -110,10 +111,10 @@ def format_value_with_alert(label, raw_value_str, key_ref):
     if raw_value_str == "" or raw_value_str is None: return ""
     cleaned_value = clean_number_format(raw_value_str)
     if not cleaned_value: return f"{label} {raw_value_str}"
-    # Formatação especial para eGFR do Tecnolab
+    
     if key_ref == "eGFR" and '-' in cleaned_value:
-        display_text = f"{label} {cleaned_value.replace('-', ' - ')}"
-        return display_text # Retorna sem alerta, pois são dois valores
+        parts = cleaned_value.split('-')
+        return f"{label} {parts[0]} - {parts[1]}"
         
     display_text = f"{label} {cleaned_value}"
     val_float = convert_to_float(cleaned_value)
@@ -122,16 +123,17 @@ def format_value_with_alert(label, raw_value_str, key_ref):
         ref = VALORES_REFERENCIA[key_ref]
         crit_high, crit_low = ref.get("crit_high"), ref.get("crit_low")
         max_val, min_val = ref.get("max"), ref.get("min")
+        
         is_crit_high = crit_high is not None and val_float > crit_high
         is_crit_low = crit_low is not None and val_float < crit_low
         is_high = max_val is not None and val_float > max_val
         is_low = min_val is not None and val_float < min_val
-        if is_crit_high or is_crit_low: alert_suffix = " (!)"
-        elif is_high or is_low: alert_suffix = " *"
-        if key_ref == "eGFR" and min_val is not None and val_float < min_val:
-            if not (is_crit_high or is_crit_low): alert_suffix = " *"
-        elif key_ref == "eGFR" and alert_suffix == " *" and not ref.get("max") and not ref.get("crit_high"):
-            alert_suffix = ""
+        
+        if is_crit_high or is_crit_low:
+            alert_suffix = " (!)"
+        elif is_high or is_low:
+            alert_suffix = " *"
+            
     return f"{display_text}{alert_suffix}"
 
 
@@ -223,8 +225,7 @@ def anonimizar_texto(texto_original):
 def extract_datetime_info(lines, is_tecnolab):
     if is_tecnolab:
         for line in lines:
-            # Padrão específico do Tecnolab: Coleta(18/08/2025 17:19)
-            m_tecnolab = re.search(r"Coleta\((\d{1,2}/\d{1,2}/\d{2,4})\s*(\d{1,2}:\d{2})\)", line, re.IGNORECASE)
+            m_tecnolab = re.search(r"Coleta\((\d{1,2}/\d{1,2}/\d{2,4})\s+(\d{1,2}:\d{2})\)", line, re.IGNORECASE)
             if m_tecnolab:
                 date_part = m_tecnolab.group(1)
                 time_part = m_tecnolab.group(2)
@@ -237,10 +238,9 @@ def extract_datetime_info(lines, is_tecnolab):
                         m_part = time_parts_match.group(2).zfill(2)
                         return f"{day_month} {h_part}h{m_part}"
                 except (ValueError, TypeError):
-                    continue # Tenta a próxima linha se houver erro
-        return "" # Retorna vazio se não encontrar no formato Tecnolab
+                    continue
+        return "" 
 
-    # Lógica original para outros laboratórios
     for line in lines:
         m_specific = re.search(
             r"Data de Coleta/Recebimento:\s*(\d{1,2}/\d{1,2}/\d{2,4}),\s*Hora Aproximada:\s*(\d{1,2}:\d{2})(?:\s+\w{2,4})?",
@@ -333,9 +333,9 @@ def extract_hemograma_completo(lines, is_tecnolab):
             search_leuco = lines[leuco_idx:leuco_idx+10]
             for line in search_leuco:
                 if "Leucócitos" in line:
-                    match = re.search(r"Leucócitos\.*:\s*" + NUM_PATTERN, line)
+                    match = re.search(r"Leucócitos\.*:\s*(" + NUM_PATTERN + r")\s*mil", line)
                     if match:
-                        results["Leuco"] = match.group(1).replace(".","") # Remove ponto de milhar
+                        results["Leuco"] = match.group(1)
                 elif "Neutrófilos" in line:
                     match = re.search(r"Neutrófilos\.*:\s*(\d{1,3}[,.]\d{1,2})\s*%", line)
                     if match:
@@ -345,9 +345,9 @@ def extract_hemograma_completo(lines, is_tecnolab):
                      if match:
                         leuco_diff_text.append(f"Linf {clean_number_format(match.group(1))}%")
                 elif "Plaquetas" in line:
-                     match = re.search(r"Plaquetas\.*:\s*" + NUM_PATTERN, line)
+                     match = re.search(r"Plaquetas\.*:\s*(" + NUM_PATTERN + r")\s*mil", line)
                      if match:
-                         results["Plaq"] = match.group(1).replace(".","")
+                         results["Plaq"] = match.group(1)
         results["Leuco_Diff"] = f"({', '.join(leuco_diff_text)})" if leuco_diff_text else ""
         return results
 
@@ -463,7 +463,6 @@ def extract_funcao_renal_e_eletrólitos(lines, is_tecnolab):
         results["U"] = extract_tecnolab_generic(lines, ["DOSAGEM DE URÉIA", "URÉIA"])
         results["Cr"] = extract_tecnolab_generic(lines, "CREATININA")
         
-        # Extração especial para eGFR com dois valores
         egfr_afro = extract_labeled_value(lines, "*eGFR - Afro Descendente:")
         egfr_non_afro = extract_labeled_value(lines, "*eGFR Não Afro Descendente:")
         if egfr_afro and egfr_non_afro:
@@ -492,7 +491,6 @@ def extract_marcadores_inflamatorios_cardiacos(lines, is_tecnolab):
         results["PCR"] = extract_tecnolab_generic(lines, 'PROTEINA "C" REATIVA')
         results["Trop"] = extract_tecnolab_generic(lines, 'TROPONINA T (ALTA SENSIBILIDADE)')
         results["NT-proBNP"] = extract_tecnolab_generic(lines, 'NT-proBNP')
-        # DDímero e Lactato não presentes nos exemplos, podem ser adicionados aqui se necessário
         return results
 
     # Lógica Original
@@ -506,15 +504,15 @@ def extract_hepatograma_pancreas(lines, is_tecnolab):
         results["TGO"] = extract_tecnolab_generic(lines, "TRANSAMINASE OXALACETICA - TGO")
         results["TGP"] = extract_tecnolab_generic(lines, "TRANSAMINASE PIRUVICA (TGP)")
         
-        # Bilirrubinas têm um formato um pouco diferente
         bili_idx = next((i for i, l in enumerate(lines) if "bilirrubina" in l.lower() and "resultado" in l.lower()), -1)
+        if bili_idx == -1: # Tenta encontrar sem a palavra resultado
+             bili_idx = next((i for i, l in enumerate(lines) if l.strip().upper() == "BILIRRUBINA"),-1)
         if bili_idx != -1:
             search_bili = lines[bili_idx : bili_idx + 5]
             results["BT"] = extract_labeled_value(search_bili, "TOTAL....:", search_window_lines=0)
             results["BD"] = extract_labeled_value(search_bili, "DIRETA...:", search_window_lines=0)
             results["BI"] = extract_labeled_value(search_bili, "INDIRETA.:", search_window_lines=0)
         
-        # Amilase e Lipase não estavam nos exemplos, podem ser adicionados aqui
         return results
         
     # Lógica Original
@@ -567,7 +565,6 @@ def extract_hepatograma_pancreas(lines, is_tecnolab):
 
 def extract_medicamentos(lines, is_tecnolab):
     results = {}
-    # Nenhuma regra específica para Tecnolab nos exemplos
     results["Vanco"] = extract_labeled_value(lines, "Vancomicina", label_must_be_at_start=False, search_window_lines=0, require_unit="µg/mL")
     return results
 
@@ -577,7 +574,6 @@ def extract_gasometria(lines, is_tecnolab):
     gas_idx = -1
     gas_header_found = False
 
-    # Encontrar o header da gasometria e determinar o tipo (Arterial/Venosa)
     for i, line in enumerate(lines):
         l_line = line.lower()
         if "gasometria arterial" in l_line:
@@ -604,40 +600,29 @@ def extract_gasometria(lines, is_tecnolab):
     if not gas_header_found:
         return results
 
-    # Mapa de parâmetros de gasometria
     gas_map = {
         "ph": "pH_gas", "pco2": "pCO2_gas", "hco3": "HCO3_gas",
-        "bicarbonato": "HCO3_gas", "excesso de bases": "BE_gas", "be": "BE_gas",
+        "bicarbonato": "HCO3_gas", "be": "BE_gas", "excesso de bases": "BE_gas",
         "po2": "pO2_gas", "saturação de o2": "SatO2_gas", "sato2": "SatO2_gas",
-        "lactato": "Lac_gas", "lac": "Lac_gas", "conteúdo de co2": "cCO2_gas", "co2 total": "cCO2_gas"
+        "lactato": "Lac_gas", "lac": "Lac_gas", "co2 total": "cCO2_gas", "conteúdo de co2": "cCO2_gas"
     }
 
-    search_lines = lines[gas_idx + 1 : min(gas_idx + 1 + len(gas_map) + 5, len(lines))]
+    search_lines = lines[gas_idx + 1 : min(gas_idx + 20, len(lines))]
     
     for line_content in search_lines:
-        if any(hdr in line_content.lower() for hdr in ["hemograma", "coagulograma", "bioquimica", "cultura", "urina tipo i", "assinado eletronicamente", "responsável:", "locais de execução", "material:"]):
+        if any(hdr in line_content.lower() for hdr in ["hemograma", "coagulograma", "bioquimica", "cultura", "urina tipo i", "assinado eletronicamente", "material:"]):
             break
         
-        # Padrão Tecnolab: pH : 7.50
-        match_tecnolab = re.match(r"^\s*([a-zA-Z0-9+\s]+?)\s*:\s*" + GAS_NUM_PATTERN, line_content)
-        if match_tecnolab:
-            label = match_tecnolab.group(1).strip().lower()
-            value = match_tecnolab.group(2)
+        match = re.match(r"^\s*([a-zA-Z0-9+\s]+?)\s*:\s*" + GAS_NUM_PATTERN, line_content)
+        if match:
+            label = match.group(1).strip().lower()
+            value = match.group(2)
             if label in gas_map:
                 out_key = gas_map[label]
                 if out_key not in results:
                     results[out_key] = value
-            continue # Próxima linha
+            continue
 
-        # Padrão Original
-        for label_search, out_key in gas_map.items():
-            if out_key in results and results[out_key]: continue
-            pattern = r"^\s*" + re.escape(label_search) + r"(?:[\s:.-]+)\s*" + GAS_NUM_PATTERN
-            match_original = re.search(pattern, line_content, re.IGNORECASE)
-            if match_original:
-                results[out_key] = match_original.group(1)
-                break
-    
     if exam_prefix:
         return {exam_prefix + k: v for k, v in results.items() if v}
     elif results:
@@ -647,7 +632,6 @@ def extract_gasometria(lines, is_tecnolab):
 
 def extract_sorologias(lines, is_tecnolab):
     results = {}
-    # Nenhuma regra específica para Tecnolab nos exemplos
     tests = [("Anti HIV 1/2","HIV"),("Anti-HAV (IgM)","HAV_IgM"),("HBsAg","HBsAg"),("Anti-HBs","AntiHBs"),
              ("Anti-HBc Total","AntiHBc_Total"),("Anti-HCV","HCV"),("VDRL","VDRL")]
     for i, line in enumerate(lines):
@@ -670,38 +654,33 @@ def extract_urina_tipo_i(lines, is_tecnolab):
     u1_idx = next((i for i, l in enumerate(lines) if "urina tipo i" in l.lower()), -1)
     if u1_idx == -1: return {}
 
+    search_u1 = lines[u1_idx : min(u1_idx + 25, len(lines))]
+    
     if is_tecnolab:
-        search_u1 = lines[u1_idx : u1_idx + 20]
         for line in search_u1:
-            # Padrão chave : valor
             match = re.match(r"\s*([A-Z\s-]+)\s*:\s*(.+)", line)
             if match:
                 key, value = match.group(1).strip().lower(), match.group(2).strip()
-                if "ph" in key: results["U1_pH"] = re.search(NUM_PATTERN, value).group(1) if re.search(NUM_PATTERN, value) else ""
+                val_num_match = re.search(NUM_PATTERN, value)
+                if "ph" in key: results["U1_pH"] = val_num_match.group(1) if val_num_match else ""
                 elif "densidade" in key: results["U1_dens"] = value.split()[0]
                 elif "proteína" in key: results["U1_prot"] = "(-)" if "negativo" in value.lower() else "(+)"
                 elif "glicose" in key: results["U1_glic"] = "(-)" if "negativo" in value.lower() else "(+)"
                 elif "nitrito" in key: results["U1_nit"] = "(-)" if "negativo" in value.lower() else "(+)"
                 elif "corpos cetônicos" in key: results["U1_CC"] = "(-)" if "negativo" in value.lower() else "(+)"
                 elif "hemácias" in key:
-                    val_match = re.search(NUM_PATTERN, value)
-                    if val_match: results["U1_hem"] = val_match.group(1).replace(".", "")
+                     if val_num_match: results["U1_hem"] = val_num_match.group(1).replace(".", "")
                 elif "leucócitos" in key:
-                    val_match = re.search(NUM_PATTERN, value)
-                    if "acima de" in value.lower() and val_match:
-                        results["U1_leuco"] = ">" + val_match.group(1).replace(".", "")
-                    elif val_match:
-                        results["U1_leuco"] = val_match.group(1).replace(".", "")
+                    if "acima de" in value.lower() and val_num_match:
+                        results["U1_leuco"] = ">" + val_num_match.group(1).replace(".", "")
+                    elif val_num_match:
+                        results["U1_leuco"] = val_num_match.group(1).replace(".", "")
         return results
 
     # Lógica Original
-    found = False
-    for i, line in enumerate(lines):
+    for line in search_u1:
         l_line = line.lower()
-        if any(t in l_line for t in ["urina tipo i","eas","sumário de urina"]): found = True
-        if not found: continue
-        if "assinado eletronicamente" in l_line or ("método:" in l_line and "urina tipo i" not in l_line):
-            if found: break
+        if "assinado eletronicamente" in l_line or ("método:" in l_line and "urina tipo i" not in l_line): break
         if "nitrito" in l_line: results["U1_nit"] = "(+)" if "positivo" in l_line else "(-)"
         for k, lbls, terms in [("U1_leuco",["leucócitos"],{"numerosos":"Num","inumeros":"Num","raros":"Raros","campos cobertos":"Cob"}),
                                ("U1_hem",["hemácias","eritrócitos"],{"numerosas":"Num","inumeras":"Num","raras":"Raras","campos cobertos":"Cob"})]:
@@ -716,38 +695,33 @@ def extract_urina_tipo_i(lines, is_tecnolab):
     return results
 
 def extract_culturas(lines, is_tecnolab):
+    found_cultures = []
     if is_tecnolab:
-        found_cultures = []
         for i, line in enumerate(lines):
             l_line = line.lower()
             cult_type, cult_result = None, None
             if l_line.startswith("urocultura"):
                 cult_type = "URC"
-                # Procura o resultado na linha seguinte
-                if i + 1 < len(lines) and "resultado:" in lines[i+1].lower():
-                    res_line = lines[i+2] if "resultado:" == lines[i+1].lower().strip() else lines[i+1]
-                    if "não houve crescimento" in res_line.lower():
-                        cult_result = "(-)"
+                if i + 2 < len(lines) and "resultado:" in lines[i+1].lower():
+                    if "não houve crescimento" in lines[i+2].lower(): cult_result = "(-)"
             elif l_line.startswith("hemocultura"):
                 cult_type = "HMC"
                 if i + 1 < len(lines) and "resultado parcial:" in lines[i+1].lower():
-                    if "parcialmente negativo" in lines[i+1].lower():
-                         cult_result = "PN"
+                    if "parcialmente negativo" in lines[i+1].lower(): cult_result = "PN"
 
             if cult_type and cult_result:
                 found_cultures.append({"Tipo": cult_type, "Resultado": cult_result})
-        # Remove duplicatas de HMC PN
+        
         unique_cultures = []
         seen = set()
         for cult in found_cultures:
-            identifier = (cult["Tipo"], cult["Resultado"])
+            identifier = cult["Tipo"] 
             if identifier not in seen:
                 unique_cultures.append(cult)
                 seen.add(identifier)
         return unique_cultures
 
     # Lógica Original
-    found_cultures = []
     germe_regex = r"([A-Z][a-z]+\s(?:cf\.\s)?[A-Z]?[a-z]+)"
     i = 0
     while i < len(lines):
@@ -757,26 +731,17 @@ def extract_culturas(lines, is_tecnolab):
                             "urocultura" in l_line or \
                             "hemocultura" in l_line
         if is_culture_header:
-            block_start_index = i
             current_culture_block_lines = [line_content]
             j = i + 1
             while j < len(lines):
                 next_line_lower = lines[j].lower()
-                is_next_block_header = "cultura de urina" in next_line_lower or \
-                                       "urocultura" in next_line_lower or \
-                                       "hemocultura" in next_line_lower or \
-                                       "hemograma" in next_line_lower or \
-                                       "coagulograma" in next_line_lower or \
-                                       "bioquimica" in next_line_lower or \
-                                       "urina tipo i" in next_line_lower or \
-                                       "assinado eletronicamente" in next_line_lower
+                is_next_block_header = "cultura de urina" in next_line_lower or "urocultura" in next_line_lower or "hemocultura" in next_line_lower or "hemograma" in next_line_lower or "coagulograma" in next_line_lower or "bioquimica" in next_line_lower or "urina tipo i" in next_line_lower or "assinado eletronicamente" in next_line_lower
                 if is_next_block_header:
                     break
                 current_culture_block_lines.append(lines[j])
                 j += 1
             culture_data = process_single_culture_block(current_culture_block_lines, germe_regex)
-            if culture_data:
-                found_cultures.append(culture_data)
+            if culture_data: found_cultures.append(culture_data)
             i = j
             continue
         i += 1
@@ -796,7 +761,6 @@ def extract_culturas(lines, is_tecnolab):
 
 
 def process_single_culture_block(block_lines, germe_regex):
-    # (A função process_single_culture_block permanece inalterada, pois é para o lab original)
     current_culture_data = {}
     culture_type_label, culture_type_detail, sample_info = None, "", ""
     first_line_lower = block_lines[0].lower()
@@ -1152,7 +1116,7 @@ def parse_lab_report(text):
     l_str = format_value_with_alert("Leuco", all_res.get("Leuco",""), "Leuco") if all_res.get("Leuco") else ""
     if l_str:
         diff_str = all_res.get("Leuco_Diff", "")
-        if "Neut" in diff_str or "Linf" in diff_str: # Adiciona diferencial apenas se tiver dados
+        if "Neut" in diff_str or "Linf" in diff_str:
             l_str += f" {diff_str}"
         out_sections["HEMOGRAMA"].append(l_str)
     if all_res.get("Plaq"): out_sections["HEMOGRAMA"].append(format_value_with_alert("Plaq", all_res["Plaq"], "Plaq"))
@@ -1182,11 +1146,7 @@ def parse_lab_report(text):
     egfr_fmt = format_value_with_alert("eGFR", egfr_raw, "eGFR").replace("eGFR ", "") if egfr_raw else ""
     cr_egfr_s = f"Cr {cr_fmt}" if cr_fmt else ""
     if egfr_fmt:
-        # Lógica para não duplicar eGFR se já estiver no formato customizado
-        if "eGFR" in cr_egfr_s:
-            cr_egfr_s = cr_egfr_s.replace("eGFR", egfr_fmt)
-        else:
-            cr_egfr_s = (cr_egfr_s + f" (eGFR {egfr_fmt})") if cr_egfr_s else f"eGFR {egfr_fmt}"
+        cr_egfr_s = (cr_egfr_s + f" ({egfr_fmt})") if cr_egfr_s else egfr_fmt
 
     if cr_egfr_s: out_sections["FUNCAO_RENAL_ELETRÓLITOS_GLI"].append(cr_egfr_s)
 
@@ -1220,33 +1180,25 @@ def parse_lab_report(text):
     elif any(k.startswith("GV_") for k in all_res.keys()): gas_pfx = "GV_"
     
     gas_params_output = []
-    gas_header = ""
-    if gas_pfx:
-        gas_header = "Gasometria Arterial: " if gas_pfx == "GA_" else "Gasometria Venosa: "
+    if gas_pfx or any("_gas" in k and all_res[k] for k in all_res.keys()):
         gas_order_map = {"pH": "pH_gas", "pCO2": "pCO2_gas", "pO2": "pO2_gas", "HCO3": "HCO3_gas", "BE": "BE_gas", "SatO2": "SatO2_gas", "Lac": "Lac_gas", "cCO2": "cCO2_gas"}
         for display_label, dict_key_suffix in gas_order_map.items():
-            full_key_to_check = gas_pfx + dict_key_suffix
+            full_key_to_check = (gas_pfx + dict_key_suffix) if gas_pfx else dict_key_suffix
             if full_key_to_check in all_res and all_res[full_key_to_check]:
                 gas_params_output.append(format_value_with_alert(display_label, all_res[full_key_to_check], dict_key_suffix))
-    elif any("_gas" in k and all_res[k] for k in all_res.keys() if not k.startswith("GA_") and not k.startswith("GV_")):
-        gas_header = "Gasometria: "
-        gas_order_map = {"pH": "pH_gas", "pCO2": "pCO2_gas", "pO2": "pO2_gas", "HCO3": "HCO3_gas", "BE": "BE_gas", "SatO2": "SatO2_gas", "Lac": "Lac_gas", "cCO2": "cCO2_gas"}
-        for display_label, dict_key_suffix in gas_order_map.items():
-            if dict_key_suffix in all_res and all_res[dict_key_suffix]:
-                 gas_params_output.append(format_value_with_alert(display_label, all_res[dict_key_suffix], dict_key_suffix))
+
     if gas_params_output:
-        # Formato customizado para Tecnolab
-        if is_tecnolab:
-             gas_items_custom = [item.replace(" ","_").replace("SatO2", "SatO2_") for item in gas_params_output]
-             out_sections["GASOMETRIA"].append(" // ".join(gas_items_custom))
-        else:
-            out_sections["GASOMETRIA"].append(gas_header + " // ".join(gas_params_output))
+        gas_header = "Gasometria Arterial: " if gas_pfx == "GA_" else "Gasometria Venosa: " if gas_pfx == "GV_" else "Gasometria: "
+        out_sections["GASOMETRIA"].append(gas_header + " // ".join(gas_params_output))
 
     # Urina I
+    u1_parts = []
     for k, lbl in [("U1_pH", "U1_pH"),("U1_dens", "U1_dens"), ("U1_prot", "U1_prot"), ("U1_glic", "U1_glic"),
                    ("U1_nit", "U1_nit"), ("U1_CC", "U1_CC"), ("U1_hem", "U1_hem"), ("U1_leuco", "U1_leuco")]:
         if all_res.get(k):
-             out_sections["URINA_I"].append(f"{lbl} {all_res[k]}")
+             u1_parts.append(f"{lbl} {all_res[k]}")
+    if u1_parts:
+        out_sections["URINA_I"].append(" // ".join(u1_parts))
 
     # Sorologias
     soro_map = {"HIV":"Anti HIV 1/2","HAV_IgM":"Anti-HAV IgM","HBsAg":"HBsAg","AntiHBs":"Anti-HBs",
