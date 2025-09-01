@@ -1,20 +1,3 @@
-Pronto\! Concluí a atualização do seu código.
-
-Incorporei a lógica para processar os exames do laboratório **Tecnolab**, mantendo total compatibilidade com o formato anterior. As principais alterações foram feitas nas funções de extração (`extract_...`), que agora detectam o formato do laudo e aplicam as regras corretas.
-
-Abaixo está o código completo e atualizado. Você pode substituir o seu código antigo por este.
-
-### Destaques das Modificações:
-
-  * **Detecção Automática:** O código agora identifica se o laudo é do Tecnolab pela presença do link "https://www.google.com/url?sa=E\&source=gmail\&q=tecnolab.com.br".
-  * **Novos Padrões de Extração:** Criei novos padrões de Regex para capturar os resultados no formato específico do Tecnolab (ex: `RESULTADO: ...`, `I.N.R....: ...`, valores antes das etiquetas no hemograma, etc.).
-  * **Novos Exames:** Adicionei suporte para extrair **Cálcio Total** (`CaT`) e **NT-proBNP**.
-  * **eGFR:** A extração do eGFR foi ajustada para capturar os dois valores (Afro e Não Afro Descendente) e formatá-los como você pediu (ex: `eGFR 79-69`).
-  * **Urina Tipo I e Culturas:** A lógica foi expandida para interpretar corretamente os resultados de Urina I e as culturas (Urocultura e Hemocultura Parcialmente Negativa) do Tecnolab.
-
-Aqui está o código final:
-
-```python
 import streamlit as st
 import re
 import json
@@ -1603,4 +1586,3 @@ with tab2: # Aba do Agente IA
 # Rodapé comum
 st.markdown("---")
 st.caption("Este aplicativo é uma ferramenta de auxílio e não substitui a análise crítica e o julgamento clínico profissional. Verifique sempre os resultados e a formatação final antes de usar em prontuários.")
-```
