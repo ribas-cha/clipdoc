@@ -3,14 +3,14 @@ import re
 import json
 import streamlit.components.v1 as components
 from dateutil import parser as date_parser
-import google.generativeai as genai # Importa a biblioteca do Gemini
+import google.generativeai as genai 
 
 # --- Configuração da Página (DEVE SER O PRIMEIRO COMANDO STREAMLIT) ---
 st.set_page_config(page_title="ClipDoc", layout="wide")
 
 # --- Padrões Regex Globais ---
 NUM_PATTERN = r"([<>]{0,1}\d{1,6}(?:[,.]\d{1,3})?)"
-GAS_NUM_PATTERN = r"([<>]{0,1}-?\d{1,6}(?:[,.]\d{1,3})?)" # Permite negativos e comparadores
+GAS_NUM_PATTERN = r"([<>]{0,1}-?\d{1,6}(?:[,.]\d{1,3})?)"
 
 # --- Configuração de Valores de Referência ---
 VALORES_REFERENCIA = {
@@ -39,8 +39,8 @@ VALORES_REFERENCIA = {
     "TTPA_R": {"min": 0.90, "max": 1.25, "crit_high": 3.0},
     "TGO": {"min": 15, "max": 37},
     "TGP": {"min": 6, "max": 45},
-    "GGT": {"max": 71}, # Exemplo Masculino
-    "FA": {"max": 129}, # Exemplo Masculino
+    "GGT": {"max": 71}, 
+    "FA": {"max": 129}, 
     "BT": {"min": 0.30, "max": 1.20},
     "BD": {"max": 0.30},
     "BI": {"min": 0.10, "max": 1.00},
@@ -82,7 +82,7 @@ if not GOOGLE_API_KEY:
 if GOOGLE_API_KEY:
     try:
         genai.configure(api_key=GOOGLE_API_KEY)
-        gemini_model = genai.GenerativeModel('gemini-2.5-flash-lite')
+        gemini_model = genai.GenerativeModel('gemini-2.5-flash')
         gemini_available = True
     except Exception as e:
         st.session_state.gemini_config_error = f"Erro ao configurar a API do Gemini: {e}. Verifique sua chave de API."
@@ -105,17 +105,23 @@ def convert_to_float(cleaned_value_str):
     try: return float(cleaned_value_str)
     except ValueError: return None
 
-def format_value_with_alert(label, raw_value_str, key_ref):
+def format_value_with_alert(label, raw_value_str, key_ref, unit_suffix=""):
     if raw_value_str == "" or raw_value_str is None: return ""
     cleaned_value = clean_number_format(raw_value_str)
     if not cleaned_value: return f"{label} {raw_value_str}"
     
     if key_ref == "eGFR" and '-' in cleaned_value:
         parts = cleaned_value.split('-')
-        return f"{label} {parts[0]} - {parts[1]}"
+        return f"{label} {parts[0]}-{parts[1]}"
         
-    display_text = f"{label} {cleaned_value}"
-    val_float = convert_to_float(cleaned_value)
+    display_text = f"{label} {cleaned_value}{unit_suffix}"
+    
+    # Para Leuco e Plaq que já vêm como "mil", o valor de referência é diferente
+    val_to_check = float(cleaned_value)
+    if unit_suffix == " mil":
+        val_to_check *= 1000
+
+    val_float = convert_to_float(str(val_to_check))
     alert_suffix = ""
     if val_float is not None and key_ref in VALORES_REFERENCIA:
         ref = VALORES_REFERENCIA[key_ref]
@@ -224,16 +230,12 @@ def extract_datetime_info(lines, is_tecnolab):
         for line in lines:
             m_tecnolab = re.search(r"Coleta\((\d{1,2}/\d{1,2}/\d{2,4})\s+(\d{1,2}:\d{2})\)", line, re.IGNORECASE)
             if m_tecnolab:
-                date_part = m_tecnolab.group(1)
-                time_part = m_tecnolab.group(2)
+                date_part, time_part = m_tecnolab.group(1), m_tecnolab.group(2)
                 try:
                     dt_obj_date = date_parser.parse(date_part, dayfirst=True)
                     day_month = dt_obj_date.strftime("%d/%m")
-                    time_parts_match = re.match(r"(\d{1,2}):(\d{2})", time_part)
-                    if time_parts_match:
-                        h_part = time_parts_match.group(1).zfill(2)
-                        m_part = time_parts_match.group(2).zfill(2)
-                        return f"{day_month} {h_part}h{m_part}"
+                    h_part, m_part = time_part.split(':')
+                    return f"{day_month} {h_part.zfill(2)}h{m_part.zfill(2)}"
                 except (ValueError, TypeError):
                     continue
         return "" 
@@ -241,72 +243,20 @@ def extract_datetime_info(lines, is_tecnolab):
     for line in lines:
         m_specific = re.search(
             r"Data de Coleta/Recebimento:\s*(\d{1,2}/\d{1,2}/\d{2,4}),\s*Hora Aproximada:\s*(\d{1,2}:\d{2})(?:\s+\w{2,4})?",
-            line,
-            re.IGNORECASE
+            line, re.IGNORECASE
         )
         if m_specific:
-            date_part_full = m_specific.group(1)
-            time_part = m_specific.group(2)
+            date_part_full, time_part = m_specific.group(1), m_specific.group(2)
             try:
                 dt_obj_date = date_parser.parse(date_part_full, dayfirst=True, fuzzy=False)
                 day_month = dt_obj_date.strftime("%d/%m")
-                time_parts_match = re.match(r"(\d{1,2}):(\d{2})", time_part)
-                if time_parts_match:
-                    h_part = time_parts_match.group(1).zfill(2)
-                    m_part = time_parts_match.group(2).zfill(2)
-                    return f"{day_month} {h_part}h{m_part}"
+                h_part, m_part = time_part.split(':')
+                return f"{day_month} {h_part.zfill(2)}h{m_part.zfill(2)}"
             except (ValueError, TypeError):
                 day_month_match = re.match(r"(\d{1,2}/\d{1,2})", date_part_full)
                 if day_month_match:
-                    time_parts_match = re.match(r"(\d{1,2}):(\d{2})", time_part)
-                    if time_parts_match:
-                        h_part = time_parts_match.group(1).zfill(2)
-                        m_part = time_parts_match.group(2).zfill(2)
-                        return f"{day_month_match.group(1)} {h_part}h{m_part}"
-
-    for line_idx, line in enumerate(lines[:20]):
-        m_generic = re.search(
-            r"(data|coleta|recebimento|realização)(?:[^0-9\n<>-]*?)(\d{1,2}[./-]\d{1,2}(?:[./-]\d{2,4})?)?"
-            r"(?:[^0-9\n<>-]*?)(\d{1,2}[:hH]\d{1,2})",
-            line,
-            re.IGNORECASE
-        )
-        if m_generic:
-            date_str_generic = m_generic.group(2)
-            time_str_generic = m_generic.group(3)
-            
-            formatted_date = ""
-            if date_str_generic:
-                try:
-                    dt_obj_generic_date = date_parser.parse(date_str_generic, dayfirst=True, fuzzy=True)
-                    formatted_date = dt_obj_generic_date.strftime("%d/%m")
-                except:
-                    dm_match = re.match(r"(\d{1,2}[./-]\d{1,2})", date_str_generic)
-                    if dm_match: formatted_date = dm_match.group(1).replace('.', '/').replace('-', '/')
-            
-            cleaned_time_str = time_str_generic.replace('h',':').replace('H',':')
-            time_parts_match = re.match(r"(\d{1,2}):(\d{2})", cleaned_time_str)
-            formatted_time = ""
-            if time_parts_match:
-                h_part = time_parts_match.group(1).zfill(2)
-                m_part = time_parts_match.group(2).zfill(2)
-                formatted_time = f"{h_part}h{m_part}"
-            elif len(cleaned_time_str) == 4 and cleaned_time_str.isdigit():
-                formatted_time = f"{cleaned_time_str[:2]}h{cleaned_time_str[2:]}"
-            elif len(cleaned_time_str) == 3 and cleaned_time_str.isdigit():
-                formatted_time = f"{cleaned_time_str[0].zfill(2)}h{cleaned_time_str[1:]}"
-
-            if formatted_date and formatted_time:
-                return f"{formatted_date} {formatted_time}"
-            elif formatted_time:
-                for look_back_idx in range(max(0, line_idx-2), line_idx +1 ):
-                    date_only_match = re.search(r"(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})", lines[look_back_idx])
-                    if date_only_match:
-                        try:
-                            dt_obj_date_only = date_parser.parse(date_only_match.group(1), dayfirst=True)
-                            formatted_date_only = dt_obj_date_only.strftime("%d/%m")
-                            return f"{formatted_date_only} {formatted_time}"
-                        except: continue
+                    h_part, m_part = time_part.split(':')
+                    return f"{day_month_match.group(1)} {h_part.zfill(2)}h{m_part.zfill(2)}"
     return ""
 
 
@@ -316,7 +266,6 @@ def extract_hemograma_completo(lines, is_tecnolab):
         erit_idx = next((i for i, l in enumerate(lines) if "eritrograma" in l.lower()), -1)
         if erit_idx != -1:
             search_erit = lines[erit_idx:erit_idx+10]
-            # CORREÇÃO: A lógica que causava o erro foi generalizada para funcionar corretamente.
             for k, lbls_config in [("Hb", ["Hemoglobina"]), ("Ht", ["Hematócrito"]), ("VCM", "VCM"), ("HCM", "HCM"), ("CHCM", "CHCM"), ("RDW", "RDW")]:
                 search_label = lbls_config[0] if isinstance(lbls_config, list) else lbls_config
                 for line in search_erit:
@@ -335,6 +284,7 @@ def extract_hemograma_completo(lines, is_tecnolab):
                     match = re.search(r"Leucócitos\.*:\s*(" + NUM_PATTERN + r")\s*mil", line)
                     if match:
                         results["Leuco"] = match.group(1)
+                        results["Leuco_unit"] = " mil"
                 elif "Neutrófilos" in line:
                     match = re.search(r"Neutrófilos\.*:\s*(\d{1,3}[,.]\d{1,2})\s*%", line)
                     if match:
@@ -347,6 +297,7 @@ def extract_hemograma_completo(lines, is_tecnolab):
                      match = re.search(r"Plaquetas\.*:\s*(" + NUM_PATTERN + r")\s*mil", line)
                      if match:
                          results["Plaq"] = match.group(1)
+                         results["Plaq_unit"] = " mil"
         results["Leuco_Diff"] = f"({', '.join(leuco_diff_text)})" if leuco_diff_text else ""
         return results
 
@@ -1083,7 +1034,6 @@ Análise de Diagnósticos Diferenciais:
 def parse_lab_report(text):
     is_tecnolab = "tecnolab.com.br" in text.lower()
     
-    # Pre-processamento
     subs = [(r"Creatinina(?!\s*Kinase|\s*quinase)", "Creatinina ")]
     for p, r in subs: text = re.sub(f"(?i){p}", r, text)
     text = re.sub(r"(?i)ur[eé]ia", "Ureia", text)
@@ -1108,18 +1058,20 @@ def parse_lab_report(text):
 
     if all_res.get("datetime"): out_sections["HEADER"].append(all_res["datetime"])
 
-    # Hemograma
     for k, lbl in [("Hb","Hb"),("Ht","Ht"),("VCM","VCM"),("HCM","HCM"),("CHCM","CHCM"),("RDW","RDW")]:
         if all_res.get(k): out_sections["HEMOGRAMA"].append(format_value_with_alert(lbl, all_res[k], k))
-    l_str = format_value_with_alert("Leuco", all_res.get("Leuco",""), "Leuco") if all_res.get("Leuco") else ""
+    
+    l_str = format_value_with_alert("Leuco", all_res.get("Leuco",""), "Leuco", unit_suffix=all_res.get("Leuco_unit", ""))
     if l_str:
         diff_str = all_res.get("Leuco_Diff", "")
         if "Neut" in diff_str or "Linf" in diff_str:
             l_str += f" {diff_str}"
         out_sections["HEMOGRAMA"].append(l_str)
-    if all_res.get("Plaq"): out_sections["HEMOGRAMA"].append(format_value_with_alert("Plaq", all_res["Plaq"], "Plaq"))
+    
+    p_str = format_value_with_alert("Plaq", all_res.get("Plaq", ""), "Plaq", unit_suffix=all_res.get("Plaq_unit", ""))
+    if p_str:
+        out_sections["HEMOGRAMA"].append(p_str)
 
-    # Coagulograma
     tp_raw, inr_raw = all_res.get("TP_s",""), all_res.get("INR","")
     tp_fmt = format_value_with_alert("TP", tp_raw, "TP_s").replace("TP ","") if tp_raw else ""
     inr_fmt = format_value_with_alert("INR", inr_raw, "INR").replace("INR ","") if inr_raw else ""
@@ -1135,9 +1087,8 @@ def parse_lab_report(text):
         ttpa_s = f"TTPA {ttpa_s_fmt}"
         if ttpa_r_fmt: ttpa_s += f" (R {ttpa_r_fmt})"
         coag_p.append(ttpa_s)
-    if coag_p: out_sections["COAGULOGRAMA"].append(" // ".join(coag_p))
+    if coag_p: out_sections["COAGULOGRAMA"].append(" ; ".join(coag_p))
 
-    # Função Renal e Eletrólitos
     if all_res.get("U"): out_sections["FUNCAO_RENAL_ELETRÓLITOS_GLI"].append(format_value_with_alert("U", all_res["U"], "U"))
     cr_raw, egfr_raw = all_res.get("Cr",""), all_res.get("eGFR","")
     cr_fmt = format_value_with_alert("Cr", cr_raw, "Cr").replace("Cr ", "") if cr_raw else ""
@@ -1157,14 +1108,11 @@ def parse_lab_report(text):
         if na and cl and hco3: out_sections["FUNCAO_RENAL_ELETRÓLITOS_GLI"].append(f"AGap {(na-(cl+hco3)):.1f}")
     except: pass
 
-    # Marcadores
     for k, lbl in [("PCR","PCR"),("Lac","Lactato"),("Trop","TnT-hs"),("DD","D-Dímero"), ("NT-proBNP", "NT-proBNP")]:
          if all_res.get(k): out_sections["MARCADORES_INFLAM_CARD"].append(format_value_with_alert(lbl, all_res[k], k))
-
-    # Medicamentos
+    
     if all_res.get("Vanco"): out_sections["MEDICAMENTOS"].append(format_value_with_alert("Vanco", all_res["Vanco"], "Vanco"))
 
-    # Hepatograma
     for k, lbl in [("TGO","TGO"),("TGP","TGP"),("GGT","GGT"),("FA","FA")]:
         if all_res.get(k): out_sections["HEPATOGRAMA_PANCREAS"].append(format_value_with_alert(lbl, all_res[k], k))
     bili_p = [format_value_with_alert(lbl,all_res[k],k) for k,lbl in [("BT","BT"),("BD","BD"),("BI","BI")] if all_res.get(k)]
@@ -1172,7 +1120,6 @@ def parse_lab_report(text):
     for k, lbl in [("ALB","ALB"),("AML","AML"),("LIP","LIP")]:
         if all_res.get(k): out_sections["HEPATOGRAMA_PANCREAS"].append(format_value_with_alert(lbl, all_res[k], k))
 
-    # Gasometria
     gas_pfx = ""
     if any(k.startswith("GA_") for k in all_res.keys()): gas_pfx = "GA_"
     elif any(k.startswith("GV_") for k in all_res.keys()): gas_pfx = "GV_"
@@ -1187,24 +1134,21 @@ def parse_lab_report(text):
 
     if gas_params_output:
         gas_header = "Gasometria Arterial: " if gas_pfx == "GA_" else "Gasometria Venosa: " if gas_pfx == "GV_" else "Gasometria: "
-        out_sections["GASOMETRIA"].append(gas_header + " // ".join(gas_params_output))
+        out_sections["GASOMETRIA"].append(gas_header + "; ".join(gas_params_output))
 
-    # Urina I
     u1_parts = []
     for k, lbl in [("U1_pH", "U1_pH"),("U1_dens", "U1_dens"), ("U1_prot", "U1_prot"), ("U1_glic", "U1_glic"),
                    ("U1_nit", "U1_nit"), ("U1_CC", "U1_CC"), ("U1_hem", "U1_hem"), ("U1_leuco", "U1_leuco")]:
         if all_res.get(k):
              u1_parts.append(f"{lbl} {all_res[k]}")
     if u1_parts:
-        out_sections["URINA_I"].append(" // ".join(u1_parts))
+        out_sections["URINA_I"].append(" ; ".join(u1_parts))
 
-    # Sorologias
     soro_map = {"HIV":"Anti HIV 1/2","HAV_IgM":"Anti-HAV IgM","HBsAg":"HBsAg","AntiHBs":"Anti-HBs",
                 "AntiHBc_Total":"Anti-HBc Total","HCV":"Anti-HCV","VDRL":"VDRL"}
     for k, lbl in soro_map.items():
         if all_res.get(k): out_sections["SOROLOGIAS"].append(f"{lbl} {all_res[k]}")
 
-    # Culturas
     if all_res.get("culturas_list"):
         for cult_info in all_res["culturas_list"]:
             c_str = f"{cult_info.get('Tipo','')} {cult_info.get('Resultado','')}"
@@ -1216,8 +1160,8 @@ def parse_lab_report(text):
     section_order = ["HEADER","HEMOGRAMA","COAGULOGRAMA","FUNCAO_RENAL_ELETRÓLITOS_GLI",
                      "MARCADORES_INFLAM_CARD", "MEDICAMENTOS", "HEPATOGRAMA_PANCREAS",
                      "GASOMETRIA","URINA_I","SOROLOGIAS","CULTURAS","OUTROS"]
-    final_out = [" // ".join(out_sections[s_k]) for s_k in section_order if out_sections[s_k]]
-    return " // ".join(filter(None, final_out)) + (" //" if any(final_out) else "")
+    final_out = [" ; ".join(out_sections[s_k]) for s_k in section_order if out_sections[s_k]]
+    return " ; ".join(filter(None, final_out)) + (";" if any(final_out) else "")
 
 
 
