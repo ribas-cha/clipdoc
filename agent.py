@@ -82,7 +82,7 @@ if not GOOGLE_API_KEY:
 if GOOGLE_API_KEY:
     try:
         genai.configure(api_key=GOOGLE_API_KEY)
-        gemini_model = genai.GenerativeModel('gemini-2.5-flash')
+        gemini_model = genai.GenerativeModel('gemini-flash-lite-latest')
         gemini_available = True
     except Exception as e:
         st.session_state.gemini_config_error = f"Erro ao configurar a API do Gemini: {e}. Verifique sua chave de API."
