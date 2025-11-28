@@ -407,7 +407,7 @@ def extract_tecnolab_generic(lines, labels):
 def extract_funcao_renal_e_eletrólitos(lines, is_tecnolab):
     results = {}
     if is_tecnolab:
-        results["U"] = extract_tecnolab_generic(lines, ["DOSAGEM DE URÉIA", "URÉIA"])
+        results["U"] = extract_labeled_value(lines, ["Ureia", "Uréia"], label_must_be_at_start=False)
         results["Cr"] = extract_tecnolab_generic(lines, "CREATININA")
         
         egfr_afro = extract_labeled_value(lines, "*eGFR - Afro Descendente:")
@@ -805,6 +805,7 @@ Abaixo está a evolução de um paciente do dia anterior. Faça o seguinte, de m
 2. Pontos cruciais a serem discutidos com o paciente e/ou acompanhante hoje.
 3. Pontos essenciais a serem avaliados no exame físico de hoje.
 4. Sugestões de condutas e investigações para o dia de hoje, baseadas no quadro e evidências. Se houver múltiplas condutas possíveis por evidência fraca, mencione-as brevemente.
+5. Diagnósticos diferenciais para o quadro, em uma lista do mais para o menos provável, explicando o raciocínio fisiopatológico e correlacionando com a clínica do paciente e, também, os exames complementares que podem confirmar ou excluir cada hipótese.
 
 Evolução do dia anterior:
 ---
@@ -987,6 +988,7 @@ O resumo deve incluir:
 3. Principais tratamentos realizados durante a internação.
 4. Condições do paciente no momento da alta hospitalar.
 Adicione uma linha em branco entre cada parágrafo.
+Não utilizar tags de formatação, como "**" para negrito.
 
 Última Evolução:
 ---
