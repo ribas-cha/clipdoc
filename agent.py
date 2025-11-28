@@ -1225,6 +1225,7 @@ with tab1:
                 with st.spinner("Analisando Exames..."):
                     texto_anonimizado_exames = anonimizar_texto(current_input_tab1)
                     st.session_state["saida_exames"] = parse_lab_report(texto_anonimizado_exames)
+                    st.session_state["saida_text_main_display_tab1"] = resultado_processado
                 st.session_state.input_text_area_content_tab1 = ""
                 st.success("Análise de exames concluída!")
                 st.rerun()
