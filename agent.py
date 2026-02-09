@@ -264,11 +264,9 @@ def extract_hemograma_completo(lines, is_tecnolab):
     results = {}
     
     # --- 1. Estratégia Híbrida para Série Vermelha ---
-    # Tenta achar o bloco, mas se falhar, varre o texto todo (failsafe)
     red_idx = next((i for i, l in enumerate(lines) if "série vermelha" in l.lower() or "eritrograma" in l.lower()), -1)
     search_scope = lines[red_idx:] if red_idx != -1 else lines
     
-    # Mapeamento com regex flexível para lidar com "..." e indentação
     mapa_vermelha = {
         "Hb": ["Hemoglobina", "Hb"],
         "Ht": ["Hematócrito", "Ht"],
@@ -278,62 +276,49 @@ def extract_hemograma_completo(lines, is_tecnolab):
         "RDW": ["RDW", "Red Cell"]
     }
 
-    # Regex que procura: Label + (pontos/espaços/doispontos opcionais) + NÚMERO
     for key, labels in mapa_vermelha.items():
         for line in search_scope:
-            # Para cada linha, verifica se algum dos labels está presente
             for label in labels:
                 if label.lower() in line.lower():
-                    # Regex poderosa: 
-                    # 1. O label (escapado para segurança)
-                    # 2. [.:\s]* -> aceita qualquer combinação de pontos, dois pontos e espaços
-                    # 3. O padrão numérico (NUM_PATTERN)
+                    # Procura Label + (pontos/espaços) + Número
                     pattern = re.escape(label) + r"[.:\s]*" + NUM_PATTERN
                     match = re.search(pattern, line, re.IGNORECASE)
                     if match:
                         results[key] = match.group(1)
-                        break # Achou o label nesta linha, para de procurar outros labels para esta chave
-            if key in results: break # Achou o valor para a chave (ex: Hb), vai para a próxima (Ht)
+                        break 
+            if key in results: break
 
     # --- 2. Leucócitos Totais ---
     leuco_val = ""
     for i, line in enumerate(lines):
         if "leucócitos" in line.lower() and "urina" not in line.lower(): 
-            # Procura número > 100 (para evitar pegar %) ou com "mil"
             nums = re.findall(NUM_PATTERN, line)
             for num in nums:
                 clean_n = clean_number_format(num)
                 try:
                     val_float = float(clean_n)
-                    # Lógica: Leucócitos > 1000 ou pequeno com "mil"
+                    # Lógica para pegar leucócitos (geralmente entre 1.000 e 500.000 ou < 100 com 'mil')
                     if 1000 < val_float < 500000: 
-                        leuco_val = clean_n
-                        break
+                        leuco_val = clean_n; break
                     if val_float < 100 and ("mil" in line.lower() or "x10^3" in line.lower()):
-                         leuco_val = str(int(val_float * 1000))
-                         break
+                         leuco_val = str(int(val_float * 1000)); break
                 except: continue
             if leuco_val: break     
     results["Leuco"] = leuco_val
 
-    # --- 3. Diferencial (Correção Principal) ---
+    # --- 3. Diferencial ---
     diff = []
     
     def extract_diff_item(label_list):
         for line in lines:
             if "valor de referência" in line.lower(): continue
-            
-            # Verifica se a linha tem o label
             if any(l.lower() in line.lower() for l in label_list):
-                # Regex corrigida:
-                # 1. Torna a parte decimal opcional (?:[,.]\d{1,2})? 
-                # 2. Exige o símbolo % para confirmar que é a porcentagem
+                # Tenta pegar com % primeiro
                 pattern_percent = r"(?:" + "|".join(label_list) + r")[.:\s]*(" + NUM_PATTERN + r")\s*%"
                 m_perc = re.search(pattern_percent, line, re.IGNORECASE)
                 if m_perc: return m_perc.group(1)
                 
-                # Fallback: Se não achar com %, pega o primeiro número entre 0-100 logo após o label
-                # Útil se o OCR "comeu" o símbolo de %
+                # Fallback: pega número sem % se for < 100
                 pattern_num = r"(?:" + "|".join(label_list) + r")[.:\s]*(" + NUM_PATTERN + r")"
                 m_num = re.search(pattern_num, line, re.IGNORECASE)
                 if m_num:
@@ -343,7 +328,6 @@ def extract_hemograma_completo(lines, is_tecnolab):
                     except: pass
         return ""
 
-    # Extração dos específicos
     bast = extract_diff_item(["Bastonetes", "Bastões"])
     if bast: diff.append(f"Bast {bast}%")
 
@@ -355,18 +339,31 @@ def extract_hemograma_completo(lines, is_tecnolab):
     if linf: diff.append(f"Linf {linf}%")
     
     eos = extract_diff_item(["Eosinófilos"])
-    if eos and float(clean_number_format(eos)) > 0: # Mostra se > 0
+    if eos and float(clean_number_format(eos)) > 0:
         diff.append(f"Eos {eos}%")
 
     results["Leuco_Diff"] = f"({', '.join(diff)})" if diff else ""
 
-    # --- 4. Plaquetas ---
-    # Busca por "Plaquetas" e pega o número na mesma linha
+    # --- 4. Plaquetas (CORREÇÃO AQUI) ---
+    results["Plaq"] = ""
     for line in lines:
         if "plaquetas" in line.lower() and "volume" not in line.lower():
+             # Pega o número
              m = re.search(r"Plaquetas[.:\s]*(" + NUM_PATTERN + r")", line, re.IGNORECASE)
              if m:
-                 results["Plaq"] = m.group(1)
+                 val_plaq = m.group(1)
+                 results["Plaq"] = val_plaq
+                 
+                 # CORREÇÃO:
+                 # Se tiver "mil" na linha OU o número for pequeno (< 1000), 
+                 # setamos a unidade como " mil".
+                 # O formatador vai ler isso, multiplicar por 1000 para checar o alerta,
+                 # mas vai exibir "381 mil" no texto final (que é mais elegante que 381000).
+                 try:
+                     if "mil" in line.lower() or float(clean_number_format(val_plaq)) < 1000:
+                         results["Plaq_unit"] = " mil"
+                 except: pass
+                 
                  break
     
     return results
