@@ -262,102 +262,113 @@ def extract_datetime_info(lines, is_tecnolab):
 
 def extract_hemograma_completo(lines, is_tecnolab):
     results = {}
-    if is_tecnolab:
-        erit_idx = next((i for i, l in enumerate(lines) if "eritrograma" in l.lower()), -1)
-        if erit_idx != -1:
-            search_erit = lines[erit_idx:erit_idx+10]
-            for k, lbls_config in [("Hb", ["Hemoglobina"]), ("Ht", ["Hematócrito"]), ("VCM", "VCM"), ("HCM", "HCM"), ("CHCM", "CHCM"), ("RDW", "RDW")]:
-                search_label = lbls_config[0] if isinstance(lbls_config, list) else lbls_config
-                for line in search_erit:
-                    pattern = r"^\s*" + NUM_PATTERN + r".*?" + re.escape(search_label)
+    
+    # --- 1. Estratégia Híbrida para Série Vermelha ---
+    # Tenta achar o bloco, mas se falhar, varre o texto todo (failsafe)
+    red_idx = next((i for i, l in enumerate(lines) if "série vermelha" in l.lower() or "eritrograma" in l.lower()), -1)
+    search_scope = lines[red_idx:] if red_idx != -1 else lines
+    
+    # Mapeamento com regex flexível para lidar com "..." e indentação
+    mapa_vermelha = {
+        "Hb": ["Hemoglobina", "Hb"],
+        "Ht": ["Hematócrito", "Ht"],
+        "VCM": ["VCM", "Volume Corpuscular"],
+        "HCM": ["HCM", "Hemoglobina Corpuscular"],
+        "CHCM": ["CHCM", "Concentração"],
+        "RDW": ["RDW", "Red Cell"]
+    }
+
+    # Regex que procura: Label + (pontos/espaços/doispontos opcionais) + NÚMERO
+    for key, labels in mapa_vermelha.items():
+        for line in search_scope:
+            # Para cada linha, verifica se algum dos labels está presente
+            for label in labels:
+                if label.lower() in line.lower():
+                    # Regex poderosa: 
+                    # 1. O label (escapado para segurança)
+                    # 2. [.:\s]* -> aceita qualquer combinação de pontos, dois pontos e espaços
+                    # 3. O padrão numérico (NUM_PATTERN)
+                    pattern = re.escape(label) + r"[.:\s]*" + NUM_PATTERN
                     match = re.search(pattern, line, re.IGNORECASE)
                     if match:
-                        results[k] = match.group(1)
-                        break
-        
-        leuco_diff_text = []
-        leuco_idx = next((i for i, l in enumerate(lines) if "leucograma" in l.lower()), -1)
-        if leuco_idx != -1:
-            search_leuco = lines[leuco_idx:leuco_idx+10]
-            for line in search_leuco:
-                if "Leucócitos" in line:
-                    match = re.search(r"Leucócitos\.*:\s*(" + NUM_PATTERN + r")\s*mil", line)
-                    if match:
-                        results["Leuco"] = match.group(1)
-                        results["Leuco_unit"] = " mil"
-                elif "Neutrófilos" in line:
-                    match = re.search(r"Neutrófilos\.*:\s*(\d{1,3}[,.]\d{1,2})\s*%", line)
-                    if match:
-                        leuco_diff_text.append(f"Neut {clean_number_format(match.group(1))}%")
-                elif "Linfócitos" in line:
-                     match = re.search(r"Linfócitos\.*:\s*(\d{1,3}[,.]\d{1,2})\s*%", line)
-                     if match:
-                        leuco_diff_text.append(f"Linf {clean_number_format(match.group(1))}%")
-                elif "Plaquetas" in line:
-                     match = re.search(r"Plaquetas\.*:\s*(" + NUM_PATTERN + r")\s*mil", line)
-                     if match:
-                         results["Plaq"] = match.group(1)
-                         results["Plaq_unit"] = " mil"
-        results["Leuco_Diff"] = f"({', '.join(leuco_diff_text)})" if leuco_diff_text else ""
-        return results
+                        results[key] = match.group(1)
+                        break # Achou o label nesta linha, para de procurar outros labels para esta chave
+            if key in results: break # Achou o valor para a chave (ex: Hb), vai para a próxima (Ht)
 
-    # Lógica original
-    red_idx = next((i for i, l in enumerate(lines) if "série vermelha" in l.lower() or "eritrograma" in l.lower()), -1)
-    search_red = lines[red_idx:] if red_idx != -1 else lines
-    for k, lbls in [("Hb", ["Hemoglobina", "Hb"]), ("Ht", ["Hematócrito", "Ht"]), ("VCM", "VCM"), ("HCM", "HCM"), ("CHCM", "CHCM"), ("RDW", "RDW")]:
-        results[k] = extract_labeled_value(search_red, lbls, label_must_be_at_start=True)
+    # --- 2. Leucócitos Totais ---
     leuco_val = ""
     for i, line in enumerate(lines):
-        l_line = line.lower()
-        if l_line.startswith("leucócitos") or "leucócitos totais" in l_line:
-            txt_after = re.sub(r"^(leucócitos|leucócitos totais)[\s:]*", "", line, flags=re.IGNORECASE).strip()
-            parts = txt_after.split()
-            nums = [p for p in parts if clean_number_format(p) and convert_to_float(clean_number_format(p)) is not None]
-            if len(nums) == 1: leuco_val = nums[0]
-            elif len(nums) > 1:
-                if nums[0] == "100" and len(nums) > 1 and ('.' in nums[1] or (clean_number_format(nums[1]).isdigit() and float(clean_number_format(nums[1])) > 500)):
-                    leuco_val = nums[1]
-                elif '.' in nums[0] or (clean_number_format(nums[0]).isdigit() and float(clean_number_format(nums[0])) > 500):
-                    leuco_val = nums[0]
-                elif len(nums) > 1: leuco_val = nums[1]
-            if not leuco_val:
-                m = re.search(NUM_PATTERN, txt_after)
-                if m: leuco_val = m.group(1)
-            if "mil" in txt_after.lower() and leuco_val:
-                try: leuco_val = str(int(float(clean_number_format(leuco_val)) * 1000))
-                except: pass
-            if leuco_val: break
+        if "leucócitos" in line.lower() and "urina" not in line.lower(): 
+            # Procura número > 100 (para evitar pegar %) ou com "mil"
+            nums = re.findall(NUM_PATTERN, line)
+            for num in nums:
+                clean_n = clean_number_format(num)
+                try:
+                    val_float = float(clean_n)
+                    # Lógica: Leucócitos > 1000 ou pequeno com "mil"
+                    if 1000 < val_float < 500000: 
+                        leuco_val = clean_n
+                        break
+                    if val_float < 100 and ("mil" in line.lower() or "x10^3" in line.lower()):
+                         leuco_val = str(int(val_float * 1000))
+                         break
+                except: continue
+            if leuco_val: break     
     results["Leuco"] = leuco_val
+
+    # --- 3. Diferencial (Correção Principal) ---
     diff = []
-    for lbls, key in [(["Metamielócitos", "Meta"], "MM"), (["Bastonetes", "Bastões", "Bast"], "Bast")]:
-        val = extract_labeled_value(lines, lbls, search_window_lines=1)
-        if val: diff.append(f"{key} {clean_number_format(val)}%")
-    seg_val = extract_labeled_value(lines, "Segmentados", search_window_lines=1)
-    if not seg_val:
-        n_line = next((l for l in lines if l.lower().startswith("neutrófilos")), "")
-        if n_line:
-            m = re.search(r"Neutrófilos\s*([<>]{0,1}\d{1,3}(?:[,.]\d{1,2})?)", n_line, re.IGNORECASE)
-            if m: seg_val = m.group(1)
-    if seg_val: diff.append(f"Seg {clean_number_format(seg_val)}%")
-    linf_val = ""
-    for l_line_idx, l_line_content in enumerate(lines):
-        if any(lbl.lower() in l_line_content.lower() for lbl in ["Linfócitos TOTAIS", "Linfócitos"]):
-            m_linf = re.search(r"(?:Linfócitos TOTAIS|Linfócitos)\s*([<>]{0,1}\d{1,3}(?:[,.]\d{1,2})?)", l_line_content, re.IGNORECASE)
-            if m_linf: linf_val = m_linf.group(1); break
-            if l_line_idx + 1 < len(lines):
-                m_linf_next = re.search(NUM_PATTERN, lines[l_line_idx+1])
-                if m_linf_next: linf_val = m_linf_next.group(1); break
-    if linf_val: diff.append(f"Linf {clean_number_format(linf_val)}%")
+    
+    def extract_diff_item(label_list):
+        for line in lines:
+            if "valor de referência" in line.lower(): continue
+            
+            # Verifica se a linha tem o label
+            if any(l.lower() in line.lower() for l in label_list):
+                # Regex corrigida:
+                # 1. Torna a parte decimal opcional (?:[,.]\d{1,2})? 
+                # 2. Exige o símbolo % para confirmar que é a porcentagem
+                pattern_percent = r"(?:" + "|".join(label_list) + r")[.:\s]*(" + NUM_PATTERN + r")\s*%"
+                m_perc = re.search(pattern_percent, line, re.IGNORECASE)
+                if m_perc: return m_perc.group(1)
+                
+                # Fallback: Se não achar com %, pega o primeiro número entre 0-100 logo após o label
+                # Útil se o OCR "comeu" o símbolo de %
+                pattern_num = r"(?:" + "|".join(label_list) + r")[.:\s]*(" + NUM_PATTERN + r")"
+                m_num = re.search(pattern_num, line, re.IGNORECASE)
+                if m_num:
+                    try:
+                        v = float(clean_number_format(m_num.group(1)))
+                        if 0 <= v <= 100: return m_num.group(1)
+                    except: pass
+        return ""
+
+    # Extração dos específicos
+    bast = extract_diff_item(["Bastonetes", "Bastões"])
+    if bast: diff.append(f"Bast {bast}%")
+
+    seg = extract_diff_item(["Segmentados", "Segs"])
+    if not seg: seg = extract_diff_item(["Neutrófilos", "Neutrofilos"])
+    if seg: diff.append(f"Seg {seg}%")
+
+    linf = extract_diff_item(["Linfócitos", "Linfocitos"])
+    if linf: diff.append(f"Linf {linf}%")
+    
+    eos = extract_diff_item(["Eosinófilos"])
+    if eos and float(clean_number_format(eos)) > 0: # Mostra se > 0
+        diff.append(f"Eos {eos}%")
+
     results["Leuco_Diff"] = f"({', '.join(diff)})" if diff else ""
-    results["Plaq"] = extract_labeled_value(lines, ["Plaquetas", "Contagem de Plaquetas"], label_must_be_at_start=False)
-    if not results["Plaq"]:
-        for i, line in enumerate(lines):
-            if "plaquetas" in line.lower():
-                m = re.search(r"(?:plaquetas|contagem de plaquetas)[\s:.]*([<>]{0,1}\d{1,3}(?:[.,]\d{3})*\d{0,3})", line, re.IGNORECASE)
-                if m: results["Plaq"] = m.group(1); break
-                if i + 1 < len(lines):
-                    m_next = re.search(NUM_PATTERN, lines[i+1])
-                    if m_next: results["Plaq"] = m_next.group(1); break
+
+    # --- 4. Plaquetas ---
+    # Busca por "Plaquetas" e pega o número na mesma linha
+    for line in lines:
+        if "plaquetas" in line.lower() and "volume" not in line.lower():
+             m = re.search(r"Plaquetas[.:\s]*(" + NUM_PATTERN + r")", line, re.IGNORECASE)
+             if m:
+                 results["Plaq"] = m.group(1)
+                 break
+    
     return results
 
 def extract_coagulograma(lines, is_tecnolab):
