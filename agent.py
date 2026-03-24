@@ -4,6 +4,7 @@ import json
 import streamlit.components.v1 as components
 from dateutil import parser as date_parser
 import google.generativeai as genai 
+from google.api_core.exceptions import ResourceExhausted 
 
 # --- Configuração da Página (DEVE SER O PRIMEIRO COMANDO STREAMLIT) ---
 st.set_page_config(page_title="ClipDoc", layout="wide")
@@ -55,7 +56,7 @@ VALORES_REFERENCIA = {
     "pO2_gas": {"min": 80.0, "max": 95.0, "crit_low": 40},
     "SatO2_gas": {"min": 95.0, "max": 99.0, "crit_low": 88},
     "Lac_gas": {"max": 2.0, "crit_high": 4.0},
-    "Lac": {"min": 0.50, "max": 1.60, "crit_high": 4.0},
+    "Lac": {"min": 4, "max": 20, "crit_high": 30.0},
     "cCO2_gas": {"min": 23.0, "max": 29.0}
 }
 
@@ -82,7 +83,9 @@ if not GOOGLE_API_KEY:
 if GOOGLE_API_KEY:
     try:
         genai.configure(api_key=GOOGLE_API_KEY)
-        gemini_model = genai.GenerativeModel('gemini-flash-lite-latest')
+        # Instanciamos ambos os modelos em vez de um só
+        gemini_model_pro = genai.GenerativeModel('gemini-3.1-pro')
+        gemini_model_flash = genai.GenerativeModel('gemini-3.1-flash')
         gemini_available = True
     except Exception as e:
         st.session_state.gemini_config_error = f"Erro ao configurar a API do Gemini: {e}. Verifique sua chave de API."
@@ -766,8 +769,9 @@ def process_single_culture_block(block_lines, germe_regex):
     return current_culture_data
 
 # --- Funções de Interação com IA Gemini ---
+# --- Funções de Interação com IA Gemini ---
 def gerar_resposta_ia(prompt_text):
-    if not gemini_available or not gemini_model:
+    if not gemini_available:
         return "Funcionalidade de IA indisponível. Verifique a configuração da API Key."
     try:
         safety_settings = [
@@ -776,9 +780,20 @@ def gerar_resposta_ia(prompt_text):
             {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
             {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
         ]
-        response = gemini_model.generate_content(prompt_text, safety_settings=safety_settings)
+        
+        # Lógica de Graceful Degradation (Fallback)
+        try:
+            # Tenta o raciocínio complexo do 3.1-Pro (Limite de 2 RPM)
+            response = gemini_model_pro.generate_content(prompt_text, safety_settings=safety_settings)
+        except ResourceExhausted:
+            # Cota estourou. Fallback imediato e silencioso para o 3.1-Flash (Limite 15 RPM)
+            print("LOG: Cota do 3.0 Pro excedida. Fallback acionado para o 3.0 Flash.") # Aparecerá no console
+            response = gemini_model_flash.generate_content(prompt_text, safety_settings=safety_settings)
+
         processed_text = response.text
         processed_text = re.sub(r"\[IA:[^\]]*?\]", "", processed_text)
+        
+        # ... Daqui para baixo, mantenha o SEU código original (headers_para_espaco = [...]) ...
         headers_para_espaco = [
             "#CUIDADOS PALIATIVOS:", "#ID:", "#HD:", "#AP:", "#HDA:", "#MUC:",
             "#ALERGIAS:", "#ATB:", "#TEV:", "#EXAMES:", "#EVOLUÇÃO:",
