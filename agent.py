@@ -9,6 +9,275 @@ from google.api_core.exceptions import ResourceExhausted
 # --- Configuração da Página (DEVE SER O PRIMEIRO COMANDO STREAMLIT) ---
 st.set_page_config(page_title="ClipDoc", layout="wide")
 
+# ============================================================
+# CHANGE 1 + 5: Custom CSS Theme + Hide Streamlit defaults
+# ============================================================
+st.markdown("""
+<style>
+/* --- Hide Streamlit defaults for cleaner look --- */
+#MainMenu {visibility: hidden;}
+footer {visibility: hidden;}
+header {visibility: hidden;}
+div[data-testid="stDecoration"] {display: none;}
+
+/* --- Brand Colors --- */
+:root {
+    --cd-primary: #0F6E56;
+    --cd-primary-light: #E1F5EE;
+    --cd-primary-dark: #085041;
+    --cd-amber: #854F0B;
+    --cd-amber-bg: #FAEEDA;
+    --cd-red: #A32D2D;
+    --cd-red-bg: #FCEBEB;
+    --cd-surface: #f8f9fa;
+    --cd-border: #e2e4e8;
+    --cd-text: #1a1a1a;
+    --cd-text-muted: #6b7280;
+    --cd-radius: 10px;
+}
+
+/* --- Global typography polish --- */
+.main .block-container {
+    padding-top: 2rem;
+    max-width: 1100px;
+}
+
+/* --- Tab styling --- */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 0;
+    border-bottom: 1px solid var(--cd-border);
+    background: transparent;
+}
+.stTabs [data-baseweb="tab"] {
+    padding: 0.75rem 1.5rem;
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: var(--cd-text-muted);
+    border-bottom: 2px solid transparent;
+    background: transparent;
+}
+.stTabs [aria-selected="true"] {
+    color: var(--cd-primary) !important;
+    border-bottom: 2px solid var(--cd-primary) !important;
+    background: transparent !important;
+}
+.stTabs [data-baseweb="tab"]:hover {
+    color: var(--cd-primary-dark);
+}
+
+/* --- Primary buttons --- */
+.stButton > button[kind="primary"],
+div[data-testid="stButton"] > button[kind="primary"] {
+    background-color: var(--cd-primary);
+    border: none;
+    color: white;
+    border-radius: 8px;
+    font-weight: 500;
+    padding: 0.5rem 1.25rem;
+    transition: background-color 0.2s;
+}
+.stButton > button[kind="primary"]:hover {
+    background-color: var(--cd-primary-dark);
+    border: none;
+    color: white;
+}
+
+/* --- Secondary buttons --- */
+.stButton > button:not([kind="primary"]) {
+    border-radius: 8px;
+    border: 1px solid var(--cd-border);
+    font-weight: 500;
+    color: var(--cd-text);
+    padding: 0.5rem 1.25rem;
+    transition: all 0.2s;
+}
+.stButton > button:not([kind="primary"]):hover {
+    border-color: var(--cd-primary);
+    color: var(--cd-primary);
+}
+
+/* --- Text areas --- */
+.stTextArea textarea {
+    border-radius: 8px !important;
+    border: 1px solid var(--cd-border) !important;
+    font-size: 0.9rem;
+    transition: border-color 0.2s;
+}
+.stTextArea textarea:focus {
+    border-color: var(--cd-primary) !important;
+    box-shadow: 0 0 0 1px var(--cd-primary) !important;
+}
+
+/* --- Select box --- */
+.stSelectbox [data-baseweb="select"] {
+    border-radius: 8px;
+}
+
+/* --- Card containers --- */
+.cd-card {
+    background: white;
+    border: 1px solid var(--cd-border);
+    border-radius: var(--cd-radius);
+    padding: 1.25rem;
+    margin-bottom: 1rem;
+}
+.cd-card-surface {
+    background: var(--cd-surface);
+    border-radius: var(--cd-radius);
+    padding: 1.25rem;
+    margin-bottom: 1rem;
+}
+.cd-section-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--cd-text-muted);
+    margin-bottom: 0.5rem;
+}
+
+/* --- Output display with color coding --- */
+.cd-output-box {
+    background: white;
+    border: 1px solid var(--cd-border);
+    border-radius: 8px;
+    padding: 1rem;
+    font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', 'Consolas', monospace;
+    font-size: 0.85rem;
+    line-height: 1.8;
+    min-height: 200px;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.cd-val-alert {
+    color: var(--cd-amber);
+    font-weight: 600;
+    background: var(--cd-amber-bg);
+    padding: 1px 4px;
+    border-radius: 3px;
+}
+.cd-val-crit {
+    color: var(--cd-red);
+    font-weight: 700;
+    background: var(--cd-red-bg);
+    padding: 1px 4px;
+    border-radius: 3px;
+}
+.cd-datetime {
+    color: var(--cd-primary);
+    font-weight: 600;
+}
+
+/* --- Step indicator for AI workflow --- */
+.cd-steps {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    margin-bottom: 1.5rem;
+}
+.cd-step {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+.cd-step-num {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+.cd-step-num.active {
+    background: var(--cd-primary);
+    color: white;
+}
+.cd-step-num.done {
+    background: var(--cd-primary-light);
+    color: var(--cd-primary);
+}
+.cd-step-num.pending {
+    background: #f1f1f1;
+    color: #bbb;
+}
+.cd-step-label {
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+.cd-step-label.active { color: var(--cd-primary); }
+.cd-step-label.done { color: var(--cd-primary); }
+.cd-step-label.pending { color: #bbb; }
+.cd-step-line {
+    flex: 0 0 30px;
+    height: 2px;
+    margin: 0 0.3rem;
+}
+.cd-step-line.done { background: var(--cd-primary-light); }
+.cd-step-line.pending { background: #eee; }
+
+/* --- Copy button override (embedded HTML) --- */
+.cd-copy-btn {
+    padding: 10px 15px;
+    background-color: var(--cd-primary) !important;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    width: 100%;
+    margin-top: 10px;
+    font-weight: 500;
+    font-size: 0.9rem;
+    transition: background-color 0.2s;
+}
+.cd-copy-btn:hover {
+    background-color: var(--cd-primary-dark) !important;
+}
+.cd-copy-btn-outline {
+    padding: 10px 15px;
+    background-color: transparent !important;
+    color: var(--cd-primary);
+    border: 1px solid var(--cd-primary);
+    border-radius: 8px;
+    cursor: pointer;
+    width: 100%;
+    margin-top: 10px;
+    font-weight: 500;
+    font-size: 0.9rem;
+    transition: all 0.2s;
+}
+.cd-copy-btn-outline:hover {
+    background-color: var(--cd-primary-light) !important;
+}
+
+/* --- Expander styling --- */
+.streamlit-expanderHeader {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--cd-text-muted);
+}
+
+/* --- Spinner --- */
+.stSpinner > div {
+    border-top-color: var(--cd-primary) !important;
+}
+
+/* --- Dark mode support --- */
+@media (prefers-color-scheme: dark) {
+    :root {
+        --cd-surface: #1e1e1e;
+        --cd-border: #333;
+        --cd-text: #e0e0e0;
+        --cd-text-muted: #999;
+    }
+    .cd-card { background: #1a1a1a; border-color: #333; }
+    .cd-output-box { background: #1a1a1a; border-color: #333; }
+}
+</style>
+""", unsafe_allow_html=True)
+
+
 # --- Padrões Regex Globais ---
 NUM_PATTERN = r"([<>]{0,1}\d{1,6}(?:[,.]\d{1,3})?)"
 GAS_NUM_PATTERN = r"([<>]{0,1}-?\d{1,6}(?:[,.]\d{1,3})?)"
@@ -83,7 +352,6 @@ if not GOOGLE_API_KEY:
 if GOOGLE_API_KEY:
     try:
         genai.configure(api_key=GOOGLE_API_KEY)
-        # Downgrade tático para modelos consolidados na API v1beta
         gemini_model_pro = genai.GenerativeModel('gemini-2.5-pro')
         gemini_model_flash = genai.GenerativeModel('gemini-2.5-flash')
         gemini_available = True
@@ -119,7 +387,6 @@ def format_value_with_alert(label, raw_value_str, key_ref, unit_suffix=""):
         
     display_text = f"{label} {cleaned_value}{unit_suffix}"
     
-    # Para Leuco e Plaq que já vêm como "mil", o valor de referência é diferente
     val_to_check = float(cleaned_value)
     if unit_suffix == " mil":
         val_to_check *= 1000
@@ -266,7 +533,6 @@ def extract_datetime_info(lines, is_tecnolab):
 def extract_hemograma_completo(lines, is_tecnolab):
     results = {}
     
-    # --- 1. Estratégia Híbrida para Série Vermelha ---
     red_idx = next((i for i, l in enumerate(lines) if "série vermelha" in l.lower() or "eritrograma" in l.lower()), -1)
     search_scope = lines[red_idx:] if red_idx != -1 else lines
     
@@ -283,7 +549,6 @@ def extract_hemograma_completo(lines, is_tecnolab):
         for line in search_scope:
             for label in labels:
                 if label.lower() in line.lower():
-                    # Procura Label + (pontos/espaços) + Número
                     pattern = re.escape(label) + r"[.:\s]*" + NUM_PATTERN
                     match = re.search(pattern, line, re.IGNORECASE)
                     if match:
@@ -291,7 +556,6 @@ def extract_hemograma_completo(lines, is_tecnolab):
                         break 
             if key in results: break
 
-    # --- 2. Leucócitos Totais ---
     leuco_val = ""
     for i, line in enumerate(lines):
         if "leucócitos" in line.lower() and "urina" not in line.lower(): 
@@ -300,7 +564,6 @@ def extract_hemograma_completo(lines, is_tecnolab):
                 clean_n = clean_number_format(num)
                 try:
                     val_float = float(clean_n)
-                    # Lógica para pegar leucócitos (geralmente entre 1.000 e 500.000 ou < 100 com 'mil')
                     if 1000 < val_float < 500000: 
                         leuco_val = clean_n; break
                     if val_float < 100 and ("mil" in line.lower() or "x10^3" in line.lower()):
@@ -309,19 +572,16 @@ def extract_hemograma_completo(lines, is_tecnolab):
             if leuco_val: break     
     results["Leuco"] = leuco_val
 
-    # --- 3. Diferencial ---
     diff = []
     
     def extract_diff_item(label_list):
         for line in lines:
             if "valor de referência" in line.lower(): continue
             if any(l.lower() in line.lower() for l in label_list):
-                # Tenta pegar com % primeiro
                 pattern_percent = r"(?:" + "|".join(label_list) + r")[.:\s]*(" + NUM_PATTERN + r")\s*%"
                 m_perc = re.search(pattern_percent, line, re.IGNORECASE)
                 if m_perc: return m_perc.group(1)
                 
-                # Fallback: pega número sem % se for < 100
                 pattern_num = r"(?:" + "|".join(label_list) + r")[.:\s]*(" + NUM_PATTERN + r")"
                 m_num = re.search(pattern_num, line, re.IGNORECASE)
                 if m_num:
@@ -347,26 +607,17 @@ def extract_hemograma_completo(lines, is_tecnolab):
 
     results["Leuco_Diff"] = f"({', '.join(diff)})" if diff else ""
 
-    # --- 4. Plaquetas (CORREÇÃO AQUI) ---
     results["Plaq"] = ""
     for line in lines:
         if "plaquetas" in line.lower() and "volume" not in line.lower():
-             # Pega o número
              m = re.search(r"Plaquetas[.:\s]*(" + NUM_PATTERN + r")", line, re.IGNORECASE)
              if m:
                  val_plaq = m.group(1)
                  results["Plaq"] = val_plaq
-                 
-                 # CORREÇÃO:
-                 # Se tiver "mil" na linha OU o número for pequeno (< 1000), 
-                 # setamos a unidade como " mil".
-                 # O formatador vai ler isso, multiplicar por 1000 para checar o alerta,
-                 # mas vai exibir "381 mil" no texto final (que é mais elegante que 381000).
                  try:
                      if "mil" in line.lower() or float(clean_number_format(val_plaq)) < 1000:
                          results["Plaq_unit"] = " mil"
                  except: pass
-                 
                  break
     
     return results
@@ -383,7 +634,6 @@ def extract_coagulograma(lines, is_tecnolab):
                 results["TTPA_s"] = match.group(1)
         return results
 
-    # Lógica original
     results["TP_s"] = extract_labeled_value(lines, "Tempo em segundos:", label_must_be_at_start=False, search_window_lines=0)
     inr_val = ""
     for i, line in enumerate(lines):
@@ -433,7 +683,6 @@ def extract_funcao_renal_e_eletrólitos(lines, is_tecnolab):
         results["Gli"] = extract_tecnolab_generic(lines, ["DOSAGEM DE GLICOSE", "GLICOSE"])
         return results
 
-    # Lógica original
     results["U"] = extract_labeled_value(lines, "Ureia", label_must_be_at_start=True)
     if not results["U"]: results["U"] = extract_labeled_value(lines, "U ", label_must_be_at_start=True)
     results["Cr"] = extract_labeled_value(lines, "Creatinina ", label_must_be_at_start=True)
@@ -451,7 +700,6 @@ def extract_marcadores_inflamatorios_cardiacos(lines, is_tecnolab):
         results["NT-proBNP"] = extract_tecnolab_generic(lines, 'NT-proBNP')
         return results
 
-    # Lógica Original
     for k, lbls, start in [("PCR",["Proteína C Reativa","PCR"],True), ("Lac","Lactato",True), ("Trop","Troponina",False), ("DD","D-Dímero",False)]:
         results[k] = extract_labeled_value(lines, lbls, label_must_be_at_start=start)
     return results
@@ -476,7 +724,6 @@ def extract_hepatograma_pancreas(lines, is_tecnolab):
         
         return results
         
-    # Lógica Original
     tgo_val, tgp_val = "", ""
     for i, line in enumerate(lines):
         if not tgo_val and ("Transaminase oxalacética - TGO" in line or ("Aspartato amino transferase" in line and "TGO" in line.upper())):
@@ -638,7 +885,6 @@ def extract_urina_tipo_i(lines, is_tecnolab):
                         results["U1_leuco"] = val_num_match.group(1).replace(".", "")
         return results
 
-    # Lógica Original
     for line in search_u1:
         l_line = line.lower()
         if "assinado eletronicamente" in l_line or ("método:" in l_line and "urina tipo i" not in l_line): break
@@ -682,7 +928,6 @@ def extract_culturas(lines, is_tecnolab):
                 seen.add(identifier)
         return unique_cultures
 
-    # Lógica Original
     germe_regex = r"([A-Z][a-z]+\s(?:cf\.\s)?[A-Z]?[a-z]+)"
     i = 0
     while i < len(lines):
@@ -769,7 +1014,6 @@ def process_single_culture_block(block_lines, germe_regex):
     return current_culture_data
 
 # --- Funções de Interação com IA Gemini ---
-# --- Funções de Interação com IA Gemini ---
 def gerar_resposta_ia(prompt_text):
     if not gemini_available:
         return "Funcionalidade de IA indisponível. Verifique a configuração da API Key."
@@ -781,19 +1025,15 @@ def gerar_resposta_ia(prompt_text):
             {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
         ]
         
-        # Lógica de Graceful Degradation (Fallback)
         try:
-            # Tenta o raciocínio complexo do 3.1-Pro (Limite de 2 RPM)
             response = gemini_model_pro.generate_content(prompt_text, safety_settings=safety_settings)
         except ResourceExhausted:
-            # Cota estourou. Fallback imediato e silencioso para o 3.1-Flash (Limite 15 RPM)
-            print("LOG: Cota do 3.0 Pro excedida. Fallback acionado para o 3.0 Flash.") # Aparecerá no console
+            print("LOG: Cota do 3.0 Pro excedida. Fallback acionado para o 3.0 Flash.")
             response = gemini_model_flash.generate_content(prompt_text, safety_settings=safety_settings)
 
         processed_text = response.text
         processed_text = re.sub(r"\[IA:[^\]]*?\]", "", processed_text)
         
-        # ... Daqui para baixo, mantenha o SEU código original (headers_para_espaco = [...]) ...
         headers_para_espaco = [
             "#CUIDADOS PALIATIVOS:", "#ID:", "#HD:", "#AP:", "#HDA:", "#MUC:",
             "#ALERGIAS:", "#ATB:", "#TEV:", "#EXAMES:", "#EVOLUÇÃO:",
@@ -1189,128 +1429,225 @@ def parse_lab_report(text):
     return " ; ".join(filter(None, final_out)) + (";" if any(final_out) else "")
 
 
+# ============================================================
+# CHANGE 3: Color-coded HTML output function
+# ============================================================
+def colorize_output_html(plain_text):
+    """Convert plain text output to color-coded HTML for display."""
+    if not plain_text:
+        return '<span style="color: #999; font-style: italic;">Aguardando análise...</span>'
+    
+    import html as html_module
+    safe = html_module.escape(plain_text)
+    
+    # Highlight critical values (!)
+    safe = re.sub(
+        r'(\S+\s+\S+)\s+\(!?\)',
+        r'<span class="cd-val-crit">\1 (!)</span>',
+        safe
+    )
+    # More precise: find "value (!)" pattern
+    safe = re.sub(
+        r'([A-Za-z0-9.]+\s+[0-9.,]+(?:\s*mil)?)\s*\(\!\)',
+        r'<span class="cd-val-crit">\1 (!)</span>',
+        safe
+    )
+    
+    # Highlight altered values *
+    safe = re.sub(
+        r'([A-Za-z0-9.]+\s+[0-9.,]+(?:\s*mil)?)\s*\*',
+        r'<span class="cd-val-alert">\1 *</span>',
+        safe
+    )
+    
+    # Highlight datetime at the beginning
+    safe = re.sub(
+        r'^(\d{2}/\d{2}\s+\d{2}h\d{2})',
+        r'<span class="cd-datetime">\1</span>',
+        safe
+    )
+    
+    return safe
 
-# --- Interface Streamlit ---
-st.title("🧪 ClipDoc")
+
+# ============================================================
+# CHANGE 6: Step indicator helper for AI workflow
+# ============================================================
+def render_step_indicator(current_step, steps_info):
+    """Render a step indicator bar. steps_info = [(num, label), ...]"""
+    html_parts = ['<div class="cd-steps">']
+    for i, (num, label) in enumerate(steps_info):
+        if num < current_step:
+            state = "done"
+        elif num == current_step:
+            state = "active"
+        else:
+            state = "pending"
+        
+        html_parts.append(f'<div class="cd-step"><div class="cd-step-num {state}">{num}</div>')
+        html_parts.append(f'<span class="cd-step-label {state}">{label}</span></div>')
+        
+        if i < len(steps_info) - 1:
+            line_state = "done" if num < current_step else "pending"
+            html_parts.append(f'<div class="cd-step-line {line_state}"></div>')
+    
+    html_parts.append('</div>')
+    return "".join(html_parts)
+
+
+def make_copy_button_html(element_id, text_content, label="Copiar", style="filled"):
+    """Generate a styled copy button HTML component."""
+    safe_content = text_content.replace("'", "&apos;").replace('"', "&quot;")
+    btn_class = "cd-copy-btn" if style == "filled" else "cd-copy-btn-outline"
+    return f"""<textarea id="{element_id}" style="opacity:0;position:absolute;left:-9999px;top:-9999px;">{safe_content}</textarea>
+    <button class="{btn_class}" onclick="var t=document.getElementById('{element_id}');t.select();t.setSelectionRange(0,99999);try{{var s=document.execCommand('copy');var m=document.createElement('div');m.textContent=s?'Copiado!':'Falha ao copiar.';m.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);padding:10px 24px;background-color:'+(s?'#0F6E56':'#A32D2D')+';color:white;border-radius:8px;z-index:1000;font-size:14px;font-weight:500;box-shadow:0 4px 12px rgba(0,0,0,0.15);';document.body.appendChild(m);setTimeout(function(){{document.body.removeChild(m);}},2000);}}catch(e){{alert('Não foi possível copiar.');}}">📋 {label}</button>"""
+
+
+# ============================================================
+# INTERFACE STREAMLIT — REDESIGNED
+# ============================================================
+
+# --- CHANGE 5: Branded Header ---
 st.markdown("""
-Cole o texto do exame laboratorial no campo abaixo.
-A formatação da saída busca ser concisa para prontuários. Valores alterados são marcados com `*` e críticos com `(!)`.
-""")
+<div style="display: flex; align-items: center; gap: 14px; margin-bottom: 4px;">
+    <div style="width: 44px; height: 44px; border-radius: 10px; background: linear-gradient(135deg, #0F6E56, #1D9E75); display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 3h6l2 4H7l2-4z"/>
+            <path d="M7 7v10a2 2 0 002 2h6a2 2 0 002-2V7"/>
+            <line x1="12" y1="11" x2="12" y2="15"/>
+            <line x1="10" y1="13" x2="14" y2="13"/>
+        </svg>
+    </div>
+    <div>
+        <h1 style="margin: 0; font-size: 1.8rem; font-weight: 700; letter-spacing: -0.5px; color: inherit;">ClipDoc</h1>
+        <p style="margin: 0; font-size: 0.85rem; color: #6b7280; font-weight: 400;">Formatação inteligente de exames laboratoriais para prontuários</p>
+    </div>
+</div>
+<div style="height: 1px; background: linear-gradient(to right, #0F6E56, transparent); margin: 12px 0 24px 0; opacity: 0.3;"></div>
+""", unsafe_allow_html=True)
+
 
 if not GOOGLE_API_KEY and api_key_source != "secrets":
-    st.warning("Chave da API do Google não configurada para desenvolvimento local. Funcionalidades de IA estarão desabilitadas. Defina-a na variável `GOOGLE_API_KEY_LOCAL_FALLBACK` no código ou como variável de ambiente `GOOGLE_API_KEY`.")
+    st.warning("Chave da API do Google não configurada. Funcionalidades de IA estarão desabilitadas.")
 elif GOOGLE_API_KEY and not gemini_available and 'gemini_config_error' in st.session_state:
      st.error(st.session_state.gemini_config_error)
 
-if "ia_output_evolucao_enf_fase1" not in st.session_state:
-    st.session_state.ia_output_evolucao_enf_fase1 = ""
-if "evolucao_anterior_original_para_fase2" not in st.session_state:
-    st.session_state.evolucao_anterior_original_para_fase2 = ""
-if "ia_output_admissao" not in st.session_state:
-    st.session_state.ia_output_admissao = ""
-if "ia_fase_evolucao_interativa" not in st.session_state:
-    st.session_state.ia_fase_evolucao_interativa = 1
-if "ia_dados_medico_hoje" not in st.session_state:
-    st.session_state.ia_dados_medico_hoje = ""
-if "ia_output_evolucao_final" not in st.session_state:
-    st.session_state.ia_output_evolucao_final = ""
-if "ia_output_resumo_alta" not in st.session_state:
-    st.session_state.ia_output_resumo_alta = ""
-if "ia_output_orientacoes_alta" not in st.session_state:
-    st.session_state.ia_output_orientacoes_alta = ""
-if "ia_output_diagnosticos_diferenciais" not in st.session_state:
-    st.session_state.ia_output_diagnosticos_diferenciais = ""
-if "ia_input_caso_diagnostico" not in st.session_state:
-    st.session_state.ia_input_caso_diagnostico = ""
+# --- Session State Initialization ---
+for key, default in [
+    ("ia_output_evolucao_enf_fase1", ""),
+    ("evolucao_anterior_original_para_fase2", ""),
+    ("ia_output_admissao", ""),
+    ("ia_fase_evolucao_interativa", 1),
+    ("ia_dados_medico_hoje", ""),
+    ("ia_output_evolucao_final", ""),
+    ("ia_output_resumo_alta", ""),
+    ("ia_output_orientacoes_alta", ""),
+    ("ia_output_diagnosticos_diferenciais", ""),
+    ("ia_input_caso_diagnostico", ""),
+    ("input_text_area_content_tab1", ""),
+    ("saida_exames", ""),
+    ("show_about_tab1", False),
+    ("show_compatible_exams_detailed_tab1", False),
+]:
+    if key not in st.session_state:
+        st.session_state[key] = default
 
-tab1, tab2 = st.tabs(["Extrair Exames", "🧑‍⚕️ Agente IA Hospitalista"])
 
+tab1, tab2 = st.tabs(["🧪  Extrair Exames", "🧑‍⚕️  Agente IA Hospitalista"])
+
+# ============================================================
+# TAB 1 — EXAM EXTRACTION (Redesigned)
+# ============================================================
 with tab1:
-    if "input_text_area_content_tab1" not in st.session_state: st.session_state.input_text_area_content_tab1 = ""
-    if "saida_exames" not in st.session_state: st.session_state["saida_exames"] = ""
-    if "show_about_tab1" not in st.session_state: st.session_state["show_about_tab1"] = False
-    if "show_compatible_exams_detailed_tab1" not in st.session_state: st.session_state["show_compatible_exams_detailed_tab1"] = False
-
-    col1_tab1, col2_tab1 = st.columns(2)
+    col1_tab1, col2_tab1 = st.columns(2, gap="large")
+    
     with col1_tab1:
-        st.subheader("Entrada do Exame:")
+        st.markdown('<p class="cd-section-label">Colar texto do exame</p>', unsafe_allow_html=True)
         st.session_state.input_text_area_content_tab1 = st.text_area(
             "Cole o texto do exame aqui:",
             value=st.session_state.input_text_area_content_tab1,
             key="entrada_widget_tab1",
-            height=350,
-            label_visibility="collapsed"
+            height=320,
+            label_visibility="collapsed",
+            placeholder="Cole aqui o texto copiado do sistema de exames laboratoriais..."
         )
-        action_cols_tab1 = st.columns(4)
-        if action_cols_tab1[0].button("🔍 Analisar Exame", use_container_width=True, type="primary", key="btn_analisar_exame_tab1"):
-            current_input_tab1 = st.session_state.entrada_widget_tab1
-            if current_input_tab1:
-                with st.spinner("Analisando Exames..."):
-                    texto_anonimizado_exames = anonimizar_texto(current_input_tab1)
-                    resultado_processado = parse_lab_report(texto_anonimizado_exames)
-                    st.session_state["saida_exames"] = parse_lab_report(texto_anonimizado_exames)
-                    st.session_state["saida_text_main_display_tab1"] = resultado_processado
+        
+        # CHANGE 4: Streamlined to 2 main buttons
+        btn_col1, btn_col2 = st.columns([3, 1])
+        with btn_col1:
+            if st.button("🔍  Analisar Exame", use_container_width=True, type="primary", key="btn_analisar_exame_tab1"):
+                current_input_tab1 = st.session_state.entrada_widget_tab1
+                if current_input_tab1:
+                    with st.spinner("Analisando..."):
+                        texto_anonimizado_exames = anonimizar_texto(current_input_tab1)
+                        resultado_processado = parse_lab_report(texto_anonimizado_exames)
+                        st.session_state["saida_exames"] = resultado_processado
+                    st.session_state.input_text_area_content_tab1 = ""
+                    st.rerun()
+                else:
+                    st.error("Insira o texto do exame para analisar.")
+        with btn_col2:
+            if st.button("Limpar", use_container_width=True, key="btn_limpar_tab1"):
+                st.session_state["saida_exames"] = ""
                 st.session_state.input_text_area_content_tab1 = ""
-                st.success("Análise de exames concluída!")
                 st.rerun()
-            else:
-                st.error("Por favor, insira o texto do exame.")
-        if action_cols_tab1[1].button("ℹ️ Sobre", use_container_width=True, key="btn_sobre_tab1"):
-            st.session_state["show_about_tab1"] = not st.session_state["show_about_tab1"]
-            st.session_state["show_compatible_exams_detailed_tab1"] = False
-        if action_cols_tab1[2].button("📋 Exames Compatíveis", use_container_width=True, key="btn_compat_tab1"):
-            st.session_state["show_compatible_exams_detailed_tab1"] = not st.session_state["show_compatible_exams_detailed_tab1"]
-            st.session_state["show_about_tab1"] = False
-        if action_cols_tab1[3].button("✨ Limpar Tudo", use_container_width=True, key="btn_limpar_tab1"):
-            st.session_state["saida_exames"] = ""
-            st.session_state.input_text_area_content_tab1 = ""
-            st.rerun()
+    
     with col2_tab1:
-        st.subheader("Saída Formatada dos Exames:")
-        st.text_area("Resultados formatados:", value=st.session_state.get("saida_exames", ""), height=350, key="saida_text_main_display_tab1", label_visibility="collapsed", disabled=True)
-        if st.session_state.get("saida_exames"):
-            components.html(
-                f"""<textarea id="cClipExames" style="opacity:0;position:absolute;left:-9999px;top:-9999px;">{st.session_state['saida_exames'].replace("'", "&apos;").replace('"',"&quot;")}</textarea>
-                <button onclick="var t=document.getElementById('cClipExames');t.select();t.setSelectionRange(0,99999);try{{var s=document.execCommand('copy');var m=document.createElement('div');m.textContent=s?'Resultados copiados!':'Falha.';m.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);padding:10px 20px;background-color:'+(s?'#28a745':'#dc3545')+';color:white;border-radius:5px;z-index:1000;';document.body.appendChild(m);setTimeout(function(){{document.body.removeChild(m);}},2000);}}catch(e){{alert('Não foi possível copiar.');}}" style="padding:10px 15px;background-color:#007bff;color:white;border:none;border-radius:5px;cursor:pointer;width:100%;margin-top:10px;">📋 Copiar Resultados dos Exames</button>""",
-                height=65
-            )
-    if st.session_state.get("show_about_tab1", False):
-        st.info(
-            """
-            **Autor do Código Original:** Charles Ribas
-            - Medicina (2016 - 2021) - Universidade de São Paulo
-            - Letras - Tradução (2009 - 2012) - Universidade Nova de Lisboa
-
-            **Aprimoramentos e Refatoração:** Modelo de IA Gemini
-            **Objetivo:** Facilitar a extração e formatação de dados de exames laboratoriais para agilizar o trabalho de profissionais de saúde.
-            """
+        st.markdown('<p class="cd-section-label">Resultado formatado</p>', unsafe_allow_html=True)
+        
+        # CHANGE 3: Color-coded HTML output
+        output_text = st.session_state.get("saida_exames", "")
+        colorized_html = colorize_output_html(output_text)
+        st.markdown(
+            f'<div class="cd-output-box">{colorized_html}</div>',
+            unsafe_allow_html=True
         )
-    if st.session_state.get("show_compatible_exams_detailed_tab1", False):
-        st.warning(
-             """
-            **Principais Exames Compatíveis (Tentativa de Extração):**
-            - **Hemograma:** Hemoglobina, Hematócrito, VCM, HCM, CHCM, RDW, Leucócitos (com diferencial básico: Metamielócitos, Bastonetes, Segmentados/Neutrófilos, Linfócitos), Plaquetas.
-            - **Coagulograma:** Tempo de Protrombina (TP em segundos), INR, Tempo de Tromboplastina Parcial Ativado (TTPA em segundos e Relação).
-            - **Função Renal e Eletrólitos:** Ureia, Creatinina (com eGFR), Sódio (Na), Potássio (K), Cloreto (Cl), Magnésio (Mg), Cálcio Iônico (CaI), Fósforo (P).
-            - **Glicemia (Gli).**
-            - **Marcadores Inflamatórios/Cardíacos:** Proteína C Reativa (PCR), Lactato, Troponina (Trop), D-Dímero (DD) - extração básica.
-            - **Hepatograma/Pâncreas:** Transaminase Oxalacética (TGO/AST), Transaminase Pirúvica (TGP/ALT), Gama-GT (GGT), Fosfatase Alcalina (FA), Bilirrubinas (Total, Direta, Indireta), Albumina (ALB), Amilase (AML), Lipase (LIP).
-            - **Monitoramento de Drogas:** Vancomicina (Vancocinemia).
-            - **Gasometria:** Arterial e Venosa (pH, pCO2, pO2, HCO3, Excesso de Bases (BE), Saturação de O2 (SatO2), Conteúdo de CO2 (cCO2), Lactato da gasometria).
-            - **Urina Tipo I (EAS):** Nitrito, Leucócitos, Hemácias (extração básica de outros como pH, densidade, proteínas, glicose, cetonas pode ocorrer).
-            - **Sorologias Comuns:** Anti HIV 1/2, Anti-HAV (IgM), HBsAg, Anti-HBs, Anti-HBc Total, Anti-HCV, VDRL.
-            - **Culturas:** Urocultura (URC) e Hemocultura (HMC Aeróbio/Anaeróbio, com número da amostra), com identificação do germe (se presente) e antibiograma (Sensível/Intermediário/Resistente).
+        
+        if output_text:
+            # Plain text copy button (copies raw text for EMR pasting)
+            components.html(make_copy_button_html("cClipExames", output_text, "Copiar para prontuário"), height=55)
+        
+        # Legend for markers
+        if output_text:
+            st.markdown("""
+            <div style="display: flex; gap: 16px; margin-top: 8px; font-size: 0.75rem;">
+                <span><span class="cd-val-alert" style="font-size: 0.7rem;">K 5.8 *</span> = valor alterado</span>
+                <span><span class="cd-val-crit" style="font-size: 0.7rem;">Na 118 (!)</span> = valor crítico</span>
+            </div>
+            """, unsafe_allow_html=True)
 
-            A capacidade de extração pode variar.
-            """
-        )
+    # CHANGE 4: Info sections moved to expanders
+    with st.expander("ℹ️  Sobre o ClipDoc"):
+        st.markdown("""
+        **Autor do Código Original:** Charles Ribas  
+        Medicina (2016–2021) — Universidade de São Paulo  
+        Letras / Tradução (2009–2012) — Universidade Nova de Lisboa
 
+        **Aprimoramentos e Refatoração:** Modelo de IA Gemini  
+        **Objetivo:** Facilitar a extração e formatação de dados de exames laboratoriais para agilizar o trabalho de profissionais de saúde.
+        """)
+    
+    with st.expander("📋  Exames compatíveis"):
+        st.markdown("""
+        **Hemograma:** Hb, Ht, VCM, HCM, CHCM, RDW, Leucócitos (diferencial: Bastonetes, Segmentados, Linfócitos, Eosinófilos), Plaquetas.  
+        **Coagulograma:** TP (segundos), INR, TTPA (segundos e Relação).  
+        **Função Renal e Eletrólitos:** Ureia, Creatinina (eGFR), Na, K, Cl, Mg, CaI, CaT, P.  
+        **Glicemia.**  
+        **Marcadores Inflamatórios/Cardíacos:** PCR, Lactato, Troponina, D-Dímero, NT-proBNP.  
+        **Hepatograma/Pâncreas:** TGO, TGP, GGT, FA, Bilirrubinas (BT, BD, BI), Albumina, Amilase, Lipase.  
+        **Medicamentos:** Vancomicina.  
+        **Gasometria:** Arterial e Venosa (pH, pCO2, pO2, HCO3, BE, SatO2, cCO2, Lactato).  
+        **Urina Tipo I:** Nitrito, Leucócitos, Hemácias, pH, Densidade, Proteínas, Glicose, Cetonas.  
+        **Sorologias:** HIV, HAV IgM, HBsAg, Anti-HBs, Anti-HBc Total, Anti-HCV, VDRL.  
+        **Culturas:** Urocultura e Hemocultura (com antibiograma).
+        """)
+
+# ============================================================
+# TAB 2 — AI AGENT (Redesigned with step indicators + cards)
+# ============================================================
 with tab2:
-    st.header("🧑‍⚕️ Agente IA Hospitalista")
-    st.write("Use a IA para auxiliar em tarefas como resumir evoluções, preencher admissões e mais.")
-
     if not gemini_available:
-        st.error("O Agente IA Hospitalista está indisponível no momento. Verifique a configuração da chave API ou o erro de configuração acima.")
+        st.error("O Agente IA está indisponível. Verifique a configuração da chave API.")
     else:
         ia_task_options = [
             "Selecione uma tarefa...",
@@ -1320,43 +1657,64 @@ with tab2:
             "Gerar Orientações de Alta",
             "Diagnósticos Diferenciais"
         ]
-        tarefa_ia_selecionada = st.selectbox("Qual tarefa o Agente IA deve realizar?", ia_task_options, key="ia_task_selector_tab2")
+        tarefa_ia_selecionada = st.selectbox(
+            "Qual tarefa o Agente IA deve realizar?",
+            ia_task_options,
+            key="ia_task_selector_tab2"
+        )
 
+        # --- Evoluir Paciente (Interativo) ---
         if tarefa_ia_selecionada == "Evoluir Paciente (Enfermaria - Interativo)":
-            st.subheader("Auxiliar na Evolução de Paciente (Interativo)")
+            
+            # CHANGE 6: Step indicator
+            current_fase = st.session_state.ia_fase_evolucao_interativa
+            st.markdown(render_step_indicator(current_fase, [
+                (1, "Evolução anterior"),
+                (2, "Achados de hoje"),
+                (3, "Evolução final")
+            ]), unsafe_allow_html=True)
+            
             if 'evolucao_anterior_input_fase1' not in st.session_state:
                 st.session_state.evolucao_anterior_input_fase1 = ""
 
-            if st.session_state.ia_fase_evolucao_interativa == 1:
+            if current_fase == 1:
+                st.markdown('<p class="cd-section-label">Passo 1 — Cole a evolução do dia anterior</p>', unsafe_allow_html=True)
                 st.session_state.evolucao_anterior_input_fase1 = st.text_area(
-                    "1. Cole a evolução do dia ANTERIOR aqui:",
+                    "Cole a evolução do dia anterior aqui:",
                     value=st.session_state.evolucao_anterior_input_fase1,
-                    height=200,
-                    key="ia_evol_enf_input_fase1_widget"
+                    height=250,
+                    key="ia_evol_enf_input_fase1_widget",
+                    label_visibility="collapsed",
+                    placeholder="Cole aqui a evolução completa do dia anterior..."
                 )
-                if st.button("Analisar Evolução Anterior com IA", key="btn_ia_evol_enf_fase1"):
+                if st.button("Analisar Evolução Anterior →", key="btn_ia_evol_enf_fase1", type="primary"):
                     if st.session_state.evolucao_anterior_input_fase1:
-                        with st.spinner("IA processando a evolução anterior..."):
+                        with st.spinner("IA analisando a evolução anterior..."):
                             st.session_state.evolucao_anterior_original_para_fase2 = st.session_state.evolucao_anterior_input_fase1
                             st.session_state.ia_output_evolucao_enf_fase1 = evoluir_paciente_enfermaria_ia_fase1(st.session_state.evolucao_anterior_input_fase1)
                         st.session_state.ia_fase_evolucao_interativa = 2
                         st.rerun()
-                    else: st.warning("Por favor, cole a evolução anterior.")
+                    else:
+                        st.warning("Cole a evolução anterior para continuar.")
 
-            if st.session_state.ia_fase_evolucao_interativa == 2:
+            if current_fase == 2:
                 if st.session_state.ia_output_evolucao_enf_fase1:
-                    st.markdown("---"); st.markdown("**Análise e Sugestões da IA (baseado na evolução anterior):**"); st.markdown(st.session_state.ia_output_evolucao_enf_fase1); st.markdown("---")
+                    with st.expander("📝 Análise da IA (evolução anterior)", expanded=True):
+                        st.markdown(st.session_state.ia_output_evolucao_enf_fase1)
 
+                st.markdown('<p class="cd-section-label">Passo 2 — Adicione seus achados de hoje</p>', unsafe_allow_html=True)
                 st.session_state.ia_dados_medico_hoje = st.text_area(
-                    "2. Adicione seus achados de HOJE (anamnese, exame físico, novos exames, intercorrências, etc.):",
+                    "Achados de hoje:",
                     value=st.session_state.ia_dados_medico_hoje,
-                    height=200,
-                    key="ia_dados_medico_input_fase2_widget"
+                    height=250,
+                    key="ia_dados_medico_input_fase2_widget",
+                    label_visibility="collapsed",
+                    placeholder="Anamnese, exame físico, novos exames, intercorrências..."
                 )
 
-                col_btn1, col_btn2 = st.columns(2)
+                col_btn1, col_btn2 = st.columns([3, 1])
                 with col_btn1:
-                    if st.button("Gerar Evolução Final com IA", key="btn_ia_evol_enf_fase2"):
+                    if st.button("Gerar Evolução Final →", key="btn_ia_evol_enf_fase2", type="primary"):
                         if st.session_state.ia_dados_medico_hoje:
                             with st.spinner("IA gerando a evolução final..."):
                                 st.session_state.ia_output_evolucao_final = evoluir_paciente_enfermaria_ia_fase2(
@@ -1364,10 +1722,12 @@ with tab2:
                                     st.session_state.ia_dados_medico_hoje,
                                     st.session_state.evolucao_anterior_original_para_fase2
                                 )
-                            st.session_state.ia_fase_evolucao_interativa = 3; st.rerun()
-                        else: st.warning("Por favor, adicione seus achados de hoje.")
+                            st.session_state.ia_fase_evolucao_interativa = 3
+                            st.rerun()
+                        else:
+                            st.warning("Adicione seus achados de hoje.")
                 with col_btn2:
-                    if st.button("Voltar/Reiniciar Evolução Interativa", key="btn_reset_evol_interativa"):
+                    if st.button("← Voltar", key="btn_reset_evol_interativa"):
                         st.session_state.ia_fase_evolucao_interativa = 1
                         st.session_state.evolucao_anterior_input_fase1 = ""
                         st.session_state.ia_output_evolucao_enf_fase1 = ""
@@ -1376,14 +1736,25 @@ with tab2:
                         st.session_state.evolucao_anterior_original_para_fase2 = ""
                         st.rerun()
 
-            if st.session_state.ia_fase_evolucao_interativa == 3:
-                if st.session_state.ia_output_evolucao_enf_fase1: st.markdown("---"); st.markdown("**Análise e Sugestões da IA (baseado na evolução anterior):**"); st.markdown(st.session_state.ia_output_evolucao_enf_fase1)
-                if st.session_state.ia_dados_medico_hoje: st.markdown("---"); st.markdown("**Seus achados de HOJE (fornecidos à IA):**"); st.markdown(st.session_state.ia_dados_medico_hoje)
+            if current_fase == 3:
+                with st.expander("📝 Análise da IA (evolução anterior)"):
+                    st.markdown(st.session_state.ia_output_evolucao_enf_fase1)
+                with st.expander("🩺 Seus achados de hoje"):
+                    st.markdown(st.session_state.ia_dados_medico_hoje)
+                
                 if st.session_state.ia_output_evolucao_final:
-                    st.markdown("---"); st.subheader("Evolução Médica Final (Gerada pela IA):")
-                    st.text_area("Evolução:", value=st.session_state.ia_output_evolucao_final, height=400, key="ia_evolucao_final_display", disabled=True)
-                    components.html(f"""<textarea id="cClipEvolFinal" style="opacity:0;position:absolute;left:-9999px;top:-9999px;">{st.session_state.ia_output_evolucao_final.replace("'", "&apos;").replace('"','&quot;')}</textarea><button onclick="var t=document.getElementById('cClipEvolFinal');t.select();t.setSelectionRange(0,99999);try{{var s=document.execCommand('copy');var m=document.createElement('div');m.textContent=s?'Evolução copiada!':'Falha.';m.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);padding:10px 20px;background-color:'+(s?'#28a745':'#dc3545')+';color:white;border-radius:5px;z-index:1000;';document.body.appendChild(m);setTimeout(function(){{document.body.removeChild(m);}},2000);}}catch(e){{alert('Não foi possível copiar.');}}" style="padding:10px 15px;background-color:#28a745;color:white;border:none;border-radius:5px;cursor:pointer;width:100%;margin-top:10px;">📋 Copiar Evolução Final</button>""", height=65)
-                if st.button("Iniciar Nova Evolução Interativa", key="btn_nova_evol_interativa"):
+                    st.markdown('<p class="cd-section-label">Evolução médica final</p>', unsafe_allow_html=True)
+                    st.text_area(
+                        "Evolução:",
+                        value=st.session_state.ia_output_evolucao_final,
+                        height=400,
+                        key="ia_evolucao_final_display",
+                        disabled=True,
+                        label_visibility="collapsed"
+                    )
+                    components.html(make_copy_button_html("cClipEvolFinal", st.session_state.ia_output_evolucao_final, "Copiar evolução final"), height=55)
+                
+                if st.button("Iniciar nova evolução", key="btn_nova_evol_interativa"):
                     st.session_state.ia_fase_evolucao_interativa = 1
                     st.session_state.evolucao_anterior_input_fase1 = ""
                     st.session_state.ia_output_evolucao_enf_fase1 = ""
@@ -1392,110 +1763,130 @@ with tab2:
                     st.session_state.evolucao_anterior_original_para_fase2 = ""
                     st.rerun()
 
+        # --- Auxiliar na Admissão ---
         elif tarefa_ia_selecionada == "Auxiliar na Admissão de Paciente":
-            st.subheader("Gerar Rascunho de Admissão")
+            st.markdown('<p class="cd-section-label">Informações do caso para admissão</p>', unsafe_allow_html=True)
             if 'ia_input_admissao_caso' not in st.session_state:
                 st.session_state.ia_input_admissao_caso = ""
             st.session_state.ia_input_admissao_caso = st.text_area(
-                "Forneça as informações do caso para admissão:",
+                "Informações do caso:",
                 value=st.session_state.ia_input_admissao_caso,
                 height=300,
-                key="ia_adm_info_input_widget"
+                key="ia_adm_info_input_widget",
+                label_visibility="collapsed",
+                placeholder="Forneça as informações do caso para admissão..."
             )
-            if st.button("Gerar Admissão com IA", key="btn_ia_adm_tab2"):
+            if st.button("Gerar Admissão com IA", key="btn_ia_adm_tab2", type="primary"):
                 if st.session_state.ia_input_admissao_caso:
                     with st.spinner("IA gerando o rascunho da admissão..."):
                         st.session_state.ia_output_admissao = preencher_admissao_ia(st.session_state.ia_input_admissao_caso)
-                else: st.warning("Por favor, forneça as informações do caso.")
+                else:
+                    st.warning("Forneça as informações do caso.")
             if st.session_state.ia_output_admissao:
-                st.markdown("---"); st.subheader("Rascunho da Admissão (gerado pela IA):")
-                st.text_area("Modelo Preenchido:", value=st.session_state.ia_output_admissao, height=400, key="ia_admissao_output_display_tab2", disabled=True)
-                components.html(f"""<textarea id="cClipAdmissaoTab2" style="opacity:0;position:absolute;left:-9999px;top:-9999px;">{st.session_state['ia_output_admissao'].replace("'", "&apos;").replace('"',"&quot;")}</textarea><button onclick="var t=document.getElementById('cClipAdmissaoTab2');t.select();t.setSelectionRange(0,99999);try{{var s=document.execCommand('copy');var m=document.createElement('div');m.textContent=s?'Admissão copiada!':'Falha.';m.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);padding:10px 20px;background-color:'+(s?'#28a745':'#dc3545')+';color:white;border-radius:5px;z-index:1000;';document.body.appendChild(m);setTimeout(function(){{document.body.removeChild(m);}},2000);}}catch(e){{alert('Não foi possível copiar.');}}" style="padding:10px 15px;background-color:#28a745;color:white;border:none;border-radius:5px;cursor:pointer;width:100%;margin-top:10px;">📋 Copiar Rascunho da Admissão</button>""", height=65)
-                if st.button("Limpar Rascunho da Admissão", key="btn_clear_ia_adm_tab2"):
+                st.markdown("---")
+                st.markdown('<p class="cd-section-label">Rascunho da admissão</p>', unsafe_allow_html=True)
+                st.text_area("Modelo:", value=st.session_state.ia_output_admissao, height=400, key="ia_admissao_output_display_tab2", disabled=True, label_visibility="collapsed")
+                components.html(make_copy_button_html("cClipAdmissao", st.session_state.ia_output_admissao, "Copiar admissão"), height=55)
+                if st.button("Limpar rascunho", key="btn_clear_ia_adm_tab2"):
                     st.session_state.ia_output_admissao = ""
                     st.session_state.ia_input_admissao_caso = ""
                     st.rerun()
 
+        # --- Resumo de Alta ---
         elif tarefa_ia_selecionada == "Redigir Resumo de Alta":
-            st.subheader("Redigir Resumo de Alta Hospitalar")
+            st.markdown('<p class="cd-section-label">Última evolução do paciente</p>', unsafe_allow_html=True)
             if 'ia_input_ultima_evolucao_alta' not in st.session_state:
                 st.session_state.ia_input_ultima_evolucao_alta = ""
             st.session_state.ia_input_ultima_evolucao_alta = st.text_area(
-                "Cole a ÚLTIMA evolução completa do paciente aqui:",
+                "Última evolução:",
                 value=st.session_state.ia_input_ultima_evolucao_alta,
                 height=300,
-                key="ia_input_resumo_alta_widget"
+                key="ia_input_resumo_alta_widget",
+                label_visibility="collapsed",
+                placeholder="Cole a última evolução completa do paciente..."
             )
-            if st.button("Gerar Resumo de Alta com IA", key="btn_ia_resumo_alta"):
+            if st.button("Gerar Resumo de Alta", key="btn_ia_resumo_alta", type="primary"):
                 if st.session_state.ia_input_ultima_evolucao_alta:
                     with st.spinner("IA gerando o resumo de alta..."):
                         st.session_state.ia_output_resumo_alta = gerar_resumo_alta_ia(st.session_state.ia_input_ultima_evolucao_alta)
                 else:
-                    st.warning("Por favor, cole a última evolução do paciente.")
+                    st.warning("Cole a última evolução do paciente.")
             if st.session_state.ia_output_resumo_alta:
-                st.markdown("---"); st.subheader("Resumo de Alta (Gerado pela IA):")
-                st.text_area("Resumo:", value=st.session_state.ia_output_resumo_alta, height=400, key="ia_resumo_alta_display", disabled=True)
-                components.html(f"""<textarea id="cClipResumoAlta" style="opacity:0;position:absolute;left:-9999px;top:-9999px;">{st.session_state.ia_output_resumo_alta.replace("'", "&apos;").replace('"',"&quot;")}</textarea><button onclick="var t=document.getElementById('cClipResumoAlta');t.select();t.setSelectionRange(0,99999);try{{var s=document.execCommand('copy');var m=document.createElement('div');m.textContent=s?'Resumo copiado!':'Falha.';m.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);padding:10px 20px;background-color:'+(s?'#28a745':'#dc3545')+';color:white;border-radius:5px;z-index:1000;';document.body.appendChild(m);setTimeout(function(){{document.body.removeChild(m);}},2000);}}catch(e){{alert('Não foi possível copiar.');}}" style="padding:10px 15px;background-color:#007bff;color:white;border:none;border-radius:5px;cursor:pointer;width:100%;margin-top:10px;">📋 Copiar Resumo de Alta</button>""", height=65)
-                if st.button("Limpar Resumo de Alta", key="btn_clear_ia_resumo_alta"):
+                st.markdown("---")
+                st.markdown('<p class="cd-section-label">Resumo de alta</p>', unsafe_allow_html=True)
+                st.text_area("Resumo:", value=st.session_state.ia_output_resumo_alta, height=400, key="ia_resumo_alta_display", disabled=True, label_visibility="collapsed")
+                components.html(make_copy_button_html("cClipResumoAlta", st.session_state.ia_output_resumo_alta, "Copiar resumo de alta"), height=55)
+                if st.button("Limpar resumo", key="btn_clear_ia_resumo_alta"):
                     st.session_state.ia_output_resumo_alta = ""
                     st.session_state.ia_input_ultima_evolucao_alta = ""
                     st.rerun()
 
+        # --- Orientações de Alta ---
         elif tarefa_ia_selecionada == "Gerar Orientações de Alta":
-            st.subheader("Gerar Orientações de Alta (Sinais de Alerta)")
+            st.markdown('<p class="cd-section-label">Caso do paciente</p>', unsafe_allow_html=True)
             if 'ia_input_caso_orientacoes' not in st.session_state:
                 st.session_state.ia_input_caso_orientacoes = ""
             st.session_state.ia_input_caso_orientacoes = st.text_area(
-                "Descreva o caso do paciente (diagnóstico principal, comorbidades relevantes, pontos chave da internação):",
+                "Caso do paciente:",
                 value=st.session_state.ia_input_caso_orientacoes,
                 height=200,
-                key="ia_input_orientacoes_alta_widget"
+                key="ia_input_orientacoes_alta_widget",
+                label_visibility="collapsed",
+                placeholder="Diagnóstico principal, comorbidades relevantes, pontos chave da internação..."
             )
-            if st.button("Gerar Orientações de Alta com IA", key="btn_ia_orientacoes_alta"):
+            if st.button("Gerar Orientações de Alta", key="btn_ia_orientacoes_alta", type="primary"):
                 if st.session_state.ia_input_caso_orientacoes:
                     with st.spinner("IA gerando as orientações de alta..."):
                         st.session_state.ia_output_orientacoes_alta = gerar_orientacoes_alta_ia(st.session_state.ia_input_caso_orientacoes)
                 else:
-                    st.warning("Por favor, descreva o caso do paciente.")
+                    st.warning("Descreva o caso do paciente.")
             if st.session_state.ia_output_orientacoes_alta:
-                st.markdown("---"); st.subheader("Orientações de Alta (Geradas pela IA):")
+                st.markdown("---")
+                st.markdown('<p class="cd-section-label">Orientações de alta — sinais de alerta</p>', unsafe_allow_html=True)
                 st.markdown(st.session_state.ia_output_orientacoes_alta)
-                components.html(f"""<textarea id="cClipOrientAlta" style="opacity:0;position:absolute;left:-9999px;top:-9999px;">{st.session_state.ia_output_orientacoes_alta.replace("'", "&apos;").replace('"',"&quot;")}</textarea><button onclick="var t=document.getElementById('cClipOrientAlta');t.select();t.setSelectionRange(0,99999);try{{var s=document.execCommand('copy');var m=document.createElement('div');m.textContent=s?'Orientações copiadas!':'Falha.';m.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);padding:10px 20px;background-color:'+(s?'#28a745':'#dc3545')+';color:white;border-radius:5px;z-index:1000;';document.body.appendChild(m);setTimeout(function(){{document.body.removeChild(m);}},2000);}}catch(e){{alert('Não foi possível copiar.');}}" style="padding:10px 15px;background-color:#007bff;color:white;border:none;border-radius:5px;cursor:pointer;width:100%;margin-top:10px;">📋 Copiar Orientações de Alta</button>""", height=65)
-                if st.button("Limpar Orientações de Alta", key="btn_clear_ia_orientacoes_alta"):
+                components.html(make_copy_button_html("cClipOrientAlta", st.session_state.ia_output_orientacoes_alta, "Copiar orientações"), height=55)
+                if st.button("Limpar orientações", key="btn_clear_ia_orientacoes_alta"):
                     st.session_state.ia_output_orientacoes_alta = ""
                     st.session_state.ia_input_caso_orientacoes = ""
                     st.rerun()
 
+        # --- Diagnósticos Diferenciais ---
         elif tarefa_ia_selecionada == "Diagnósticos Diferenciais":
-            st.subheader("Gerar Diagnósticos Diferenciais com IA")
+            st.markdown('<p class="cd-section-label">Caso clínico</p>', unsafe_allow_html=True)
             if 'ia_input_caso_diagnostico' not in st.session_state:
                 st.session_state.ia_input_caso_diagnostico = ""
-
             st.session_state.ia_input_caso_diagnostico = st.text_area(
-                "Descreva o caso clínico (queixas, sinais, sintomas, exame físico, exames complementares):",
+                "Caso clínico:",
                 value=st.session_state.ia_input_caso_diagnostico,
                 height=300,
-                key="ia_input_caso_diagnostico_widget"
+                key="ia_input_caso_diagnostico_widget",
+                label_visibility="collapsed",
+                placeholder="Queixas, sinais, sintomas, exame físico, exames complementares..."
             )
-            if st.button("Gerar Diagnósticos Diferenciais", key="btn_ia_diag_diff"):
+            if st.button("Gerar Diagnósticos Diferenciais", key="btn_ia_diag_diff", type="primary"):
                 caso_clinico_input = st.session_state.ia_input_caso_diagnostico
                 if caso_clinico_input:
-                    with st.spinner("IA analisando o caso e gerando diagnósticos diferenciais..."):
+                    with st.spinner("IA analisando o caso..."):
                         st.session_state.ia_output_diagnosticos_diferenciais = gerar_diagnosticos_diferenciais_ia(caso_clinico_input)
                 else:
-                    st.warning("Por favor, descreva o caso clínico.")
-
+                    st.warning("Descreva o caso clínico.")
             if st.session_state.ia_output_diagnosticos_diferenciais:
                 st.markdown("---")
-                st.subheader("Análise de Diagnósticos Diferenciais (Gerada pela IA):")
+                st.markdown('<p class="cd-section-label">Análise de diagnósticos diferenciais</p>', unsafe_allow_html=True)
                 st.markdown(st.session_state.ia_output_diagnosticos_diferenciais)
-                components.html(f"""<textarea id="cClipDiagDiff" style="opacity:0;position:absolute;left:-9999px;top:-9999px;">{st.session_state.ia_output_diagnosticos_diferenciais.replace("'", "&apos;").replace('"','&quot;')}</textarea><button onclick="var t=document.getElementById('cClipDiagDiff');t.select();t.setSelectionRange(0,99999);try{{var s=document.execCommand('copy');var m=document.createElement('div');m.textContent=s?'Análise copiada!':'Falha.';m.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);padding:10px 20px;background-color:'+(s?'#28a745':'#dc3545')+';color:white;border-radius:5px;z-index:1000;';document.body.appendChild(m);setTimeout(function(){{document.body.removeChild(m);}},2000);}}catch(e){{alert('Não foi possível copiar.');}}" style="padding:10px 15px;background-color:#007bff;color:white;border:none;border-radius:5px;cursor:pointer;width:100%;margin-top:10px;">📋 Copiar Análise</button>""", height=65)
-                if st.button("Limpar Análise de Diagnósticos", key="btn_clear_ia_diag_diff"):
+                components.html(make_copy_button_html("cClipDiagDiff", st.session_state.ia_output_diagnosticos_diferenciais, "Copiar análise"), height=55)
+                if st.button("Limpar análise", key="btn_clear_ia_diag_diff"):
                     st.session_state.ia_output_diagnosticos_diferenciais = ""
                     st.session_state.ia_input_caso_diagnostico = ""
                     st.rerun()
 
 
-# Rodapé comum
-st.markdown("---")
-st.caption("Este aplicativo é uma ferramenta de auxílio e não substitui a análise crítica e o julgamento clínico profissional. Verifique sempre os resultados e a formatação final antes de usar em prontuários.")
+# --- Footer ---
+st.markdown("""
+<div style="margin-top: 3rem; padding-top: 1rem; border-top: 1px solid #e2e4e8;">
+    <p style="font-size: 0.75rem; color: #9ca3af; text-align: center;">
+        Este aplicativo é uma ferramenta de auxílio e não substitui a análise crítica e o julgamento clínico profissional. 
+        Verifique sempre os resultados e a formatação final antes de usar em prontuários.
+    </p>
+</div>
+""", unsafe_allow_html=True)
