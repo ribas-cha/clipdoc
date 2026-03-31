@@ -1,8 +1,10 @@
 import streamlit as st
 import re
 import json
+import io
 import streamlit.components.v1 as components
 from dateutil import parser as date_parser
+from PIL import Image
 import google.generativeai as genai 
 from google.api_core.exceptions import ResourceExhausted 
 
@@ -261,6 +263,44 @@ div[data-testid="stButton"] > button[kind="primary"] {
 /* --- Spinner --- */
 .stSpinner > div {
     border-top-color: var(--cd-primary) !important;
+}
+
+/* --- File uploader area --- */
+.cd-file-upload-label {
+    font-size: 0.75rem;
+    color: var(--cd-text-muted);
+    margin-top: 0.5rem;
+    margin-bottom: 0.25rem;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.cd-file-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 4px;
+}
+.cd-file-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 0.7rem;
+    font-weight: 500;
+}
+.cd-file-chip.image {
+    background: #E6F1FB;
+    color: #0C447C;
+}
+.cd-file-chip.pdf {
+    background: #FCEBEB;
+    color: #791F1F;
+}
+.cd-file-chip.text {
+    background: #E1F5EE;
+    color: #085041;
 }
 
 /* --- Dark mode support --- */
@@ -1014,7 +1054,49 @@ def process_single_culture_block(block_lines, germe_regex):
     return current_culture_data
 
 # --- Funções de Interação com IA Gemini ---
-def gerar_resposta_ia(prompt_text):
+# --- Função de Processamento de Arquivos para Gemini ---
+def process_uploaded_files_for_gemini(uploaded_files):
+    """Convert Streamlit uploaded files to Gemini-compatible content parts."""
+    parts = []
+    file_descriptions = []
+    
+    if not uploaded_files:
+        return parts, file_descriptions
+    
+    for f in uploaded_files:
+        try:
+            file_bytes = f.getvalue()
+            
+            if f.type and f.type.startswith('image/'):
+                img = Image.open(io.BytesIO(file_bytes))
+                # Convert RGBA to RGB if needed (Gemini prefers RGB)
+                if img.mode == 'RGBA':
+                    img = img.convert('RGB')
+                parts.append(img)
+                file_descriptions.append(f"Imagem: {f.name}")
+                
+            elif f.type == 'application/pdf':
+                # Send PDF directly to Gemini (supports native PDF understanding)
+                parts.append({
+                    "mime_type": "application/pdf",
+                    "data": file_bytes
+                })
+                file_descriptions.append(f"PDF: {f.name}")
+            else:
+                # Try to read as text for other file types
+                try:
+                    text_content = file_bytes.decode('utf-8')
+                    parts.append(f"\n--- Conteúdo do arquivo {f.name} ---\n{text_content}\n---\n")
+                    file_descriptions.append(f"Texto: {f.name}")
+                except UnicodeDecodeError:
+                    file_descriptions.append(f"(Arquivo não suportado: {f.name})")
+        except Exception as e:
+            file_descriptions.append(f"(Erro ao processar {f.name}: {e})")
+    
+    return parts, file_descriptions
+
+
+def gerar_resposta_ia(prompt_text, file_parts=None):
     if not gemini_available:
         return "Funcionalidade de IA indisponível. Verifique a configuração da API Key."
     try:
@@ -1025,11 +1107,17 @@ def gerar_resposta_ia(prompt_text):
             {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
         ]
         
+        # Build multimodal content: text + files
+        if file_parts:
+            content = [prompt_text] + file_parts
+        else:
+            content = prompt_text
+        
         try:
-            response = gemini_model_pro.generate_content(prompt_text, safety_settings=safety_settings)
+            response = gemini_model_pro.generate_content(content, safety_settings=safety_settings)
         except ResourceExhausted:
             print("LOG: Cota do 3.0 Pro excedida. Fallback acionado para o 3.0 Flash.")
-            response = gemini_model_flash.generate_content(prompt_text, safety_settings=safety_settings)
+            response = gemini_model_flash.generate_content(content, safety_settings=safety_settings)
 
         processed_text = response.text
         processed_text = re.sub(r"\[IA:[^\]]*?\]", "", processed_text)
@@ -1061,7 +1149,7 @@ def gerar_resposta_ia(prompt_text):
     except Exception as e:
         return f"Erro ao comunicar com a API do Gemini: {e}"
 
-def evoluir_paciente_enfermaria_ia_fase1(evolucao_anterior):
+def evoluir_paciente_enfermaria_ia_fase1(evolucao_anterior, file_parts=None):
     prompt = f"""Você é um médico hospitalista sênior, especialista em clínica médica, atuando como consultor de um médico diarista durante a visita de enfermaria. Seu ambiente é um convênio verticalizado: a eficiência (giro de leito, redução do tempo de permanência - LOS) e a prevenção de iatrogenias são tão vitais quanto a precisão diagnóstica. Todas as suas análises são baseadas nas melhores evidências (diretrizes, RCTs).
 O usuário enviará informações por texto ou foto. Se houver dados cruciais ilegíveis/ausentes, aponte-os imediatamente. Você apoia a decisão médica, nunca a substitui. Seja implacável na objetividade. Use linguagem clínica árida e direta.
 
@@ -1100,9 +1188,9 @@ Evolução do paciente:
 {evolucao_anterior}
 ---
 """
-    return gerar_resposta_ia(prompt)
+    return gerar_resposta_ia(prompt, file_parts=file_parts)
 
-def evoluir_paciente_enfermaria_ia_fase2(resumo_ia_fase1, dados_medico_hoje, evolucao_anterior_original):
+def evoluir_paciente_enfermaria_ia_fase2(resumo_ia_fase1, dados_medico_hoje, evolucao_anterior_original, file_parts=None):
     evolucao_anterior_original_anon = anonimizar_texto(evolucao_anterior_original)
     dados_medico_hoje_anon = anonimizar_texto(dados_medico_hoje)
 
@@ -1214,10 +1302,10 @@ REGRAS ESPECÍFICAS:
 Gere a nota de EVOLUÇÃO MÉDICA para HOJE, preenchendo o modelo abaixo. Lembre-se: preserve o formato e conteúdo da evolução anterior, atualizando SOMENTE o necessário:
 {template_evolucao_final}
 """
-    return gerar_resposta_ia(prompt)
+    return gerar_resposta_ia(prompt, file_parts=file_parts)
 
 
-def preencher_admissao_ia(info_caso_original):
+def preencher_admissao_ia(info_caso_original, file_parts=None):
     info_caso = anonimizar_texto(info_caso_original)
     template_admissao = """# UNIDADE DE INTERNAÇÃO - ADMISSÃO #
 
@@ -1267,9 +1355,9 @@ Informações do caso:
 Preencha o modelo abaixo:
 {template_admissao}
 """
-    return gerar_resposta_ia(prompt)
+    return gerar_resposta_ia(prompt, file_parts=file_parts)
 
-def gerar_resumo_alta_ia(ultima_evolucao_original):
+def gerar_resumo_alta_ia(ultima_evolucao_original, file_parts=None):
     ultima_evolucao = anonimizar_texto(ultima_evolucao_original)
     prompt = f"""Você é um médico hospitalista experiente. Suas orientações sempre são guiadas por evidência científica e, em casos em que há evidência fraca, você levanta e discute quais são as condutas possíveis. Para orientações de alta, você utiliza uma linguagem clara e direta e evita jargão médico.
 
@@ -1288,9 +1376,9 @@ Não utilizar tags de formatação, como "**" para negrito.
 ---
 Resumo de Alta (em 2 ou 3 parágrafos):
 """
-    return gerar_resposta_ia(prompt)
+    return gerar_resposta_ia(prompt, file_parts=file_parts)
 
-def gerar_orientacoes_alta_ia(caso_paciente_original):
+def gerar_orientacoes_alta_ia(caso_paciente_original, file_parts=None):
     caso_paciente = anonimizar_texto(caso_paciente_original)
     prompt = f"""Você é um médico hospitalista experiente, e suas orientações sempre são guiadas por evidência científica. Em casos em que há evidência fraca, você levanta e discute quais são as condutas possíveis.
 Para orientações de alta, você utiliza uma linguagem clara e direta e evita jargão médico.
@@ -1304,7 +1392,7 @@ Caso do Paciente:
 ---
 Orientações de Alta (Sinais de Alerta para Retorno ao PS):
 """
-    return gerar_resposta_ia(prompt)
+    return gerar_resposta_ia(prompt, file_parts=file_parts)
 
 
 
@@ -1516,6 +1604,40 @@ def make_copy_button_html(element_id, text_content, label="Copiar", style="fille
     <button class="{btn_class}" onclick="var t=document.getElementById('{element_id}');t.select();t.setSelectionRange(0,99999);try{{var s=document.execCommand('copy');var m=document.createElement('div');m.textContent=s?'Copiado!':'Falha ao copiar.';m.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);padding:10px 24px;background-color:'+(s?'#0F6E56':'#A32D2D')+';color:white;border-radius:8px;z-index:1000;font-size:14px;font-weight:500;box-shadow:0 4px 12px rgba(0,0,0,0.15);';document.body.appendChild(m);setTimeout(function(){{document.body.removeChild(m);}},2000);}}catch(e){{alert('Não foi possível copiar.');}}">📋 {label}</button>"""
 
 
+def render_file_uploader(key_suffix, help_text="Anexe imagens ou PDFs com exames, evoluções, etc."):
+    """Render a file uploader and return (uploaded_files, file_parts, file_descriptions)."""
+    uploaded_files = st.file_uploader(
+        "Anexar arquivos (opcional)",
+        type=["png", "jpg", "jpeg", "gif", "webp", "bmp", "pdf", "txt"],
+        accept_multiple_files=True,
+        key=f"file_upload_{key_suffix}",
+        help=help_text,
+        label_visibility="collapsed"
+    )
+    
+    file_parts = []
+    file_descriptions = []
+    
+    if uploaded_files:
+        file_parts, file_descriptions = process_uploaded_files_for_gemini(uploaded_files)
+        
+        if file_descriptions:
+            chips_html = '<div class="cd-file-chips">'
+            for desc in file_descriptions:
+                if desc.startswith("Imagem:"):
+                    chips_html += f'<span class="cd-file-chip image">🖼 {desc.replace("Imagem: ", "")}</span>'
+                elif desc.startswith("PDF:"):
+                    chips_html += f'<span class="cd-file-chip pdf">📄 {desc.replace("PDF: ", "")}</span>'
+                elif desc.startswith("Texto:"):
+                    chips_html += f'<span class="cd-file-chip text">📝 {desc.replace("Texto: ", "")}</span>'
+                else:
+                    chips_html += f'<span class="cd-file-chip text">⚠ {desc}</span>'
+            chips_html += '</div>'
+            st.markdown(chips_html, unsafe_allow_html=True)
+    
+    return uploaded_files, file_parts, file_descriptions
+
+
 # ============================================================
 # INTERFACE STREAMLIT — REDESIGNED
 # ============================================================
@@ -1697,15 +1819,21 @@ with tab2:
                     label_visibility="collapsed",
                     placeholder="Cole aqui a evolução completa do dia anterior..."
                 )
+                st.markdown('<p class="cd-file-upload-label">📎 Anexar arquivos (imagens, PDFs) — opcional</p>', unsafe_allow_html=True)
+                _, file_parts_fase1, _ = render_file_uploader("evol_fase1")
+                
                 if st.button("Analisar Evolução Anterior →", key="btn_ia_evol_enf_fase1", type="primary"):
-                    if st.session_state.evolucao_anterior_input_fase1:
+                    if st.session_state.evolucao_anterior_input_fase1 or file_parts_fase1:
                         with st.spinner("IA analisando a evolução anterior..."):
                             st.session_state.evolucao_anterior_original_para_fase2 = st.session_state.evolucao_anterior_input_fase1
-                            st.session_state.ia_output_evolucao_enf_fase1 = evoluir_paciente_enfermaria_ia_fase1(st.session_state.evolucao_anterior_input_fase1)
+                            st.session_state.ia_output_evolucao_enf_fase1 = evoluir_paciente_enfermaria_ia_fase1(
+                                st.session_state.evolucao_anterior_input_fase1,
+                                file_parts=file_parts_fase1 if file_parts_fase1 else None
+                            )
                         st.session_state.ia_fase_evolucao_interativa = 2
                         st.rerun()
                     else:
-                        st.warning("Cole a evolução anterior para continuar.")
+                        st.warning("Cole a evolução anterior ou anexe arquivos para continuar.")
 
             if current_fase == 2:
                 if st.session_state.ia_output_evolucao_enf_fase1:
@@ -1721,16 +1849,19 @@ with tab2:
                     label_visibility="collapsed",
                     placeholder="Anamnese, exame físico, novos exames, intercorrências..."
                 )
+                st.markdown('<p class="cd-file-upload-label">📎 Anexar arquivos (imagens, PDFs) — opcional</p>', unsafe_allow_html=True)
+                _, file_parts_fase2, _ = render_file_uploader("evol_fase2")
 
                 col_btn1, col_btn2 = st.columns([3, 1])
                 with col_btn1:
                     if st.button("Gerar Evolução Final →", key="btn_ia_evol_enf_fase2", type="primary"):
-                        if st.session_state.ia_dados_medico_hoje:
+                        if st.session_state.ia_dados_medico_hoje or file_parts_fase2:
                             with st.spinner("IA gerando a evolução final..."):
                                 st.session_state.ia_output_evolucao_final = evoluir_paciente_enfermaria_ia_fase2(
                                     st.session_state.ia_output_evolucao_enf_fase1,
                                     st.session_state.ia_dados_medico_hoje,
-                                    st.session_state.evolucao_anterior_original_para_fase2
+                                    st.session_state.evolucao_anterior_original_para_fase2,
+                                    file_parts=file_parts_fase2 if file_parts_fase2 else None
                                 )
                             st.session_state.ia_fase_evolucao_interativa = 3
                             st.rerun()
@@ -1786,10 +1917,16 @@ with tab2:
                 label_visibility="collapsed",
                 placeholder="Forneça as informações do caso para admissão..."
             )
+            st.markdown('<p class="cd-file-upload-label">📎 Anexar arquivos (imagens, PDFs) — opcional</p>', unsafe_allow_html=True)
+            _, file_parts_adm, _ = render_file_uploader("admissao")
+            
             if st.button("Gerar Admissão com IA", key="btn_ia_adm_tab2", type="primary"):
-                if st.session_state.ia_input_admissao_caso:
+                if st.session_state.ia_input_admissao_caso or file_parts_adm:
                     with st.spinner("IA gerando o rascunho da admissão..."):
-                        st.session_state.ia_output_admissao = preencher_admissao_ia(st.session_state.ia_input_admissao_caso)
+                        st.session_state.ia_output_admissao = preencher_admissao_ia(
+                            st.session_state.ia_input_admissao_caso,
+                            file_parts=file_parts_adm if file_parts_adm else None
+                        )
                 else:
                     st.warning("Forneça as informações do caso.")
             if st.session_state.ia_output_admissao:
@@ -1815,10 +1952,16 @@ with tab2:
                 label_visibility="collapsed",
                 placeholder="Cole a última evolução completa do paciente..."
             )
+            st.markdown('<p class="cd-file-upload-label">📎 Anexar arquivos (imagens, PDFs) — opcional</p>', unsafe_allow_html=True)
+            _, file_parts_resumo, _ = render_file_uploader("resumo_alta")
+            
             if st.button("Gerar Resumo de Alta", key="btn_ia_resumo_alta", type="primary"):
-                if st.session_state.ia_input_ultima_evolucao_alta:
+                if st.session_state.ia_input_ultima_evolucao_alta or file_parts_resumo:
                     with st.spinner("IA gerando o resumo de alta..."):
-                        st.session_state.ia_output_resumo_alta = gerar_resumo_alta_ia(st.session_state.ia_input_ultima_evolucao_alta)
+                        st.session_state.ia_output_resumo_alta = gerar_resumo_alta_ia(
+                            st.session_state.ia_input_ultima_evolucao_alta,
+                            file_parts=file_parts_resumo if file_parts_resumo else None
+                        )
                 else:
                     st.warning("Cole a última evolução do paciente.")
             if st.session_state.ia_output_resumo_alta:
@@ -1844,10 +1987,16 @@ with tab2:
                 label_visibility="collapsed",
                 placeholder="Diagnóstico principal, comorbidades relevantes, pontos chave da internação..."
             )
+            st.markdown('<p class="cd-file-upload-label">📎 Anexar arquivos (imagens, PDFs) — opcional</p>', unsafe_allow_html=True)
+            _, file_parts_orient, _ = render_file_uploader("orientacoes_alta")
+            
             if st.button("Gerar Orientações de Alta", key="btn_ia_orientacoes_alta", type="primary"):
-                if st.session_state.ia_input_caso_orientacoes:
+                if st.session_state.ia_input_caso_orientacoes or file_parts_orient:
                     with st.spinner("IA gerando as orientações de alta..."):
-                        st.session_state.ia_output_orientacoes_alta = gerar_orientacoes_alta_ia(st.session_state.ia_input_caso_orientacoes)
+                        st.session_state.ia_output_orientacoes_alta = gerar_orientacoes_alta_ia(
+                            st.session_state.ia_input_caso_orientacoes,
+                            file_parts=file_parts_orient if file_parts_orient else None
+                        )
                 else:
                     st.warning("Descreva o caso do paciente.")
             if st.session_state.ia_output_orientacoes_alta:
