@@ -1062,19 +1062,43 @@ def gerar_resposta_ia(prompt_text):
         return f"Erro ao comunicar com a API do Gemini: {e}"
 
 def evoluir_paciente_enfermaria_ia_fase1(evolucao_anterior):
-    prompt = f"""Você é um médico hospitalista experiente e suas orientações são guiadas por evidência científica.
-Abaixo está a evolução de um paciente do dia anterior. Faça o seguinte, de modo sucinto e direto, sem devaneios:
-1. Resumo do caso em um parágrafo conciso (como se fosse uma passagem de caso para colega médico): inclua antecedentes relevantes para internação, queixa principal e duração, hipóteses diagnósticas principais, resultados pertinentes de exames que corroboram ou afastam as hipóteses, planejamento terapêutico atual e futuro, e previsão de alta hospitalar (se inferível).
-2. Pontos cruciais a serem discutidos com o paciente e/ou acompanhante hoje.
-3. Pontos essenciais a serem avaliados no exame físico de hoje.
-4. Sugestões de condutas e investigações para o dia de hoje, baseadas no quadro e evidências. Se houver múltiplas condutas possíveis por evidência fraca, mencione-as brevemente.
-5. Diagnósticos diferenciais para o quadro, em uma lista do mais para o menos provável, explicando o raciocínio fisiopatológico e correlacionando com a clínica do paciente e, também, os exames complementares que podem confirmar ou excluir cada hipótese.
+    prompt = f"""Você é um médico hospitalista sênior, especialista em clínica médica, atuando como consultor de um médico diarista durante a visita de enfermaria. Seu ambiente é um convênio verticalizado: a eficiência (giro de leito, redução do tempo de permanência - LOS) e a prevenção de iatrogenias são tão vitais quanto a precisão diagnóstica. Todas as suas análises são baseadas nas melhores evidências (diretrizes, RCTs).
+O usuário enviará informações por texto ou foto. Se houver dados cruciais ilegíveis/ausentes, aponte-os imediatamente. Você apoia a decisão médica, nunca a substitui. Seja implacável na objetividade. Use linguagem clínica árida e direta.
 
-Evolução do dia anterior:
+Abaixo está a evolução de um paciente. Para cada caso, gere a resposta EXATAMENTE nesta estrutura:
+
+1. One-Liner (Resumo)
+Parágrafo único. ID do paciente, motivo da internação, D-internação, D-antibiótico (se aplicável), evolução macro e estado atual.
+
+2. Foco Operacional de Hoje
+Bullet points curtos. O que destrava o caso hoje? (Ex: pendências de exames críticos, retornos de interconsultas, gargalos que impedem a progressão do cuidado).
+
+3. Raciocínio Diagnóstico (Tabela de Decisão)
+Caso a hipótese do usuário pareça frágil, confronte-a polidamente. Apresente as hipóteses em formato de tabela para leitura rápida:
+| Hipótese | Pontos a Favor | Pontos Contra | Próximo Passo (Exame de alto impacto/baixo custo) |
+| :--- | :--- | :--- | :--- |
+| [Doença] | [Clínica/Labs] | [Clínica/Labs] | [Conduta] |
+
+4. Conduta e Desprescrição
+* Adicionar/Ajustar: Terapias e exames estritamente necessários (evite overtesting). Justifique brevemente a mudança.
+* Desprescrever: Identifique ativamente polifarmácia, medicações sem indicação atual ou exames de rotina desnecessários que podem ser suspensos.
+
+5. Checklist de Segurança (Giro de Leito & Iatrogenia)
+Responda em linha, apenas com "Sim/Não/Avaliar":
+* Dispositivos invasivos (Acesso/SVD/SNE) podem ser sacados hoje?
+* Profilaxia TVP/Gástrica otimizada?
+* Transição ATB IV para VO possível?
+
+6. Alerta de Risco (Apenas se houver)
+Destaque em negrito se houver sinais de deterioração (qSOFA, instabilidade, delírio hipoativo mascarado). Se não houver, omita esta seção.
+
+7. Gargalo da Alta (Discharge Planning)
+Qual é o fator limitante para a alta deste paciente neste exato momento? (Ex: Término de ATB IV, instabilidade hemodinâmica, aguardando vaga de transição, dependência de O2). O que precisamos fazer HOJE para resolver esse gargalo amanhã?
+
+Evolução do paciente:
 ---
 {evolucao_anterior}
 ---
-Sua análise (Resumo, Pontos de Discussão, Exame Físico a Avaliar, Sugestões de Conduta):
 """
     return gerar_resposta_ia(prompt)
 
@@ -1158,31 +1182,36 @@ def evoluir_paciente_enfermaria_ia_fase2(resumo_ia_fase1, dados_medico_hoje, evo
 
     template_evolucao_final = "".join(template_evolucao_parts)
 
-    prompt = f"""Você é um médico hospitalista experiente.
-Sua tarefa é gerar uma nota de EVOLUÇÃO MÉDICA para HOJE.
-MANTENHA OS SEGUINTES CAMPOS EXATAMENTE COMO ESTÃO NA 'Evolução Anterior Original' (fornecida em (2)), A MENOS QUE HAJA INFORMAÇÃO CONTRADITÓRIA DIRETA NOS 'Novos dados e observações do médico para a evolução de HOJE' (fornecidos em (3)) que claramente substitua o conteúdo anterior:
-#ID, #HD (Hipótese Diagnóstica), #AP (Antecedentes Patológicos), #HDA (História da Doença Atual - use o conteúdo de #HDA, #HMA ou #HPMA da evolução anterior para este campo), #MUC (Medicações em Uso Contínuo), #ALERGIAS, #ATB (Antibióticos), #TEV (Profilaxia para TEV).
-O campo #CUIDADOS PALIATIVOS: deve ser omitido da evolução final se não houver informação relevante para ele na 'Evolução Anterior Original' ou se o conteúdo indicar que não se aplica (ex: "não", "ausente", "ndn", ou se estiver vazio).
-Para o campo #EXAMES, mantenha os exames listados na 'Evolução Anterior Original' e ADICIONE os novos exames/resultados fornecidos pelo médico.
-A IA DEVE GERAR NOVO CONTEÚDO principalmente para #EVOLUÇÃO (narrativa do dia), #EXAME FÍSICO (integrando novos achados, com cada item iniciando com hífen), #PLANO TERAPÊUTICO (lista com hífen) e #CONDUTA (em primeira pessoa e com hífens).
-ADICIONE UMA LINHA EM BRANCO APÓS CADA CAMPO PRINCIPAL (ex: após o conteúdo de #HDA:, antes de #MUC:).
+    prompt = f"""Você é um médico hospitalista sênior. Sua tarefa é gerar a nota de EVOLUÇÃO MÉDICA para HOJE.
 
-(1) Análise da IA sobre a evolução anterior (Resumo do caso, Pontos de discussão, Exame físico a avaliar, Sugestões de conduta da IA):
+REGRA FUNDAMENTAL DE FORMATO: A evolução gerada DEVE preservar a estrutura e formato da 'Evolução Anterior Original' (fornecida em (2)). Tudo que puder ser mantido, DEVE ser mantido. Copie os campos inalterados VERBATIM. Atualize APENAS o que for necessário com base nos novos dados (fornecidos em (3)).
+
+REGRAS ESPECÍFICAS:
+- NÃO use abreviações. Escreva por extenso (ex: "Murmúrio vesicular" e não "MV"; "Ruídos hidroaéreos" e não "RHA"; "Membros inferiores" e não "MMII"; "Bulhas rítmicas normofonéticas" e não "BRNF").
+- #EXAME FÍSICO: PRESERVE o exame físico da evolução anterior como base. Altere APENAS os itens que o médico explicitamente atualizou nos novos dados. Se o médico informou apenas um achado novo (ex: "edema de MMII"), atualize SOMENTE esse item e mantenha todos os demais itens do exame físico anterior intactos e na mesma ordem.
+- #ID, #HD, #AP, #HDA (ou #HMA/#HPMA), #MUC, #ALERGIAS, #ATB, #TEV: Mantenha EXATAMENTE como estão na evolução anterior, a menos que haja informação diretamente contraditória nos novos dados.
+- #CUIDADOS PALIATIVOS: Omita se não houver informação relevante ou se indicar "não"/"ausente"/"ndn"/vazio.
+- #EXAMES: Mantenha os exames anteriores e ADICIONE os novos resultados fornecidos.
+- #EVOLUÇÃO: Narrativa objetiva do dia, em linguagem clínica direta.
+- #PLANO TERAPÊUTICO e #CONDUTA: Gere novo conteúdo baseado na análise da IA e nos dados de hoje. Conduta em primeira pessoa, com hífens.
+- ADICIONE UMA LINHA EM BRANCO APÓS CADA CAMPO PRINCIPAL.
+
+(1) Análise da IA (consultor hospitalista) sobre a evolução anterior:
 ---
 {resumo_ia_fase1}
 ---
 
-(2) Evolução Anterior Original (Fonte para os campos que devem ser mantidos e para o formato do exame físico anterior):
+(2) Evolução Anterior Original (FONTE PRIMÁRIA para formato e conteúdo a ser preservado):
 ---
 {evolucao_anterior_original_anon}
 ---
 
-(3) Novos dados e observações do médico para a evolução de HOJE (anamnese, exame físico, resultados de exames, intercorrências, etc.):
+(3) Novos dados e observações do médico para a evolução de HOJE:
 ---
 {dados_medico_hoje_anon}
 ---
 
-Gere a nota de EVOLUÇÃO MÉDICA para HOJE, preenchendo o modelo abaixo com base em TODAS as informações disponíveis e seguindo as instruções específicas para cada campo:
+Gere a nota de EVOLUÇÃO MÉDICA para HOJE, preenchendo o modelo abaixo. Lembre-se: preserve o formato e conteúdo da evolução anterior, atualizando SOMENTE o necessário:
 {template_evolucao_final}
 """
     return gerar_resposta_ia(prompt)
@@ -1277,22 +1306,6 @@ Orientações de Alta (Sinais de Alerta para Retorno ao PS):
 """
     return gerar_resposta_ia(prompt)
 
-def gerar_diagnosticos_diferenciais_ia(caso_clinico_original):
-    caso_clinico = anonimizar_texto(caso_clinico_original)
-    prompt = f"""Você é um médico hospitalista experiente.
-Com base no caso clínico detalhado abaixo (incluindo queixas, sinais, sintomas, alterações de exame físico e exames complementares), faça o seguinte:
-1.  Liste as principais hipóteses diagnósticas, ordenadas da mais provável para a menos provável, se possível.
-2.  Para cada hipótese diagnóstica, sugira os exames comprobatórios ou que ajudariam a refinar o diagnóstico.
-3.  Ao final, realize um resumo crítico do caso, explicando o raciocínio para as hipóteses mais prováveis e por que outras são menos prováveis, considerando os dados fornecidos.
-
-Caso Clínico:
----
-{caso_clinico}
----
-
-Análise de Diagnósticos Diferenciais:
-"""
-    return gerar_resposta_ia(prompt)
 
 
 # --- Função Principal de Análise de Exames (parse_lab_report) ---
@@ -1542,8 +1555,6 @@ for key, default in [
     ("ia_output_evolucao_final", ""),
     ("ia_output_resumo_alta", ""),
     ("ia_output_orientacoes_alta", ""),
-    ("ia_output_diagnosticos_diferenciais", ""),
-    ("ia_input_caso_diagnostico", ""),
     ("input_text_area_content_tab1", ""),
     ("saida_exames", ""),
     ("show_about_tab1", False),
@@ -1654,8 +1665,7 @@ with tab2:
             "Evoluir Paciente (Enfermaria - Interativo)",
             "Auxiliar na Admissão de Paciente",
             "Redigir Resumo de Alta",
-            "Gerar Orientações de Alta",
-            "Diagnósticos Diferenciais"
+            "Gerar Orientações de Alta"
         ]
         tarefa_ia_selecionada = st.selectbox(
             "Qual tarefa o Agente IA deve realizar?",
@@ -1848,36 +1858,6 @@ with tab2:
                 if st.button("Limpar orientações", key="btn_clear_ia_orientacoes_alta"):
                     st.session_state.ia_output_orientacoes_alta = ""
                     st.session_state.ia_input_caso_orientacoes = ""
-                    st.rerun()
-
-        # --- Diagnósticos Diferenciais ---
-        elif tarefa_ia_selecionada == "Diagnósticos Diferenciais":
-            st.markdown('<p class="cd-section-label">Caso clínico</p>', unsafe_allow_html=True)
-            if 'ia_input_caso_diagnostico' not in st.session_state:
-                st.session_state.ia_input_caso_diagnostico = ""
-            st.session_state.ia_input_caso_diagnostico = st.text_area(
-                "Caso clínico:",
-                value=st.session_state.ia_input_caso_diagnostico,
-                height=300,
-                key="ia_input_caso_diagnostico_widget",
-                label_visibility="collapsed",
-                placeholder="Queixas, sinais, sintomas, exame físico, exames complementares..."
-            )
-            if st.button("Gerar Diagnósticos Diferenciais", key="btn_ia_diag_diff", type="primary"):
-                caso_clinico_input = st.session_state.ia_input_caso_diagnostico
-                if caso_clinico_input:
-                    with st.spinner("IA analisando o caso..."):
-                        st.session_state.ia_output_diagnosticos_diferenciais = gerar_diagnosticos_diferenciais_ia(caso_clinico_input)
-                else:
-                    st.warning("Descreva o caso clínico.")
-            if st.session_state.ia_output_diagnosticos_diferenciais:
-                st.markdown("---")
-                st.markdown('<p class="cd-section-label">Análise de diagnósticos diferenciais</p>', unsafe_allow_html=True)
-                st.markdown(st.session_state.ia_output_diagnosticos_diferenciais)
-                components.html(make_copy_button_html("cClipDiagDiff", st.session_state.ia_output_diagnosticos_diferenciais, "Copiar análise"), height=55)
-                if st.button("Limpar análise", key="btn_clear_ia_diag_diff"):
-                    st.session_state.ia_output_diagnosticos_diferenciais = ""
-                    st.session_state.ia_input_caso_diagnostico = ""
                     st.rerun()
 
 
