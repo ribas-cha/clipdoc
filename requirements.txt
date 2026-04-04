@@ -2,3 +2,4 @@ streamlit
 python-dateutil
 google-generativeai
 Pillow
+streamlit-paste-button
