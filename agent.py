@@ -147,9 +147,11 @@ div[data-testid="stButton"] > button[kind="primary"] {
     font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', 'Consolas', monospace;
     font-size: 0.85rem;
     line-height: 1.8;
-    min-height: 200px;
+    height: 320px;
+    overflow-y: auto;
     white-space: pre-wrap;
     word-break: break-word;
+    box-sizing: border-box;
 }
 .cd-val-alert {
     color: var(--cd-amber);
@@ -332,7 +334,7 @@ VALORES_REFERENCIA = {
     "RDW": {"min": 11.6, "max": 14.0},
     "Leuco": {"min": 4000, "max": 10000, "crit_low": 1000, "crit_high": 30000},
     "Plaq": {"min": 150000, "max": 450000, "crit_low": 20000, "crit_high": 1000000},
-    "PCR": {"max": 0.30, "crit_high": 10.0},
+    "PCR": {"max": 0.30, "crit_high": 100.0},
     "U": {"min": 15, "max": 50},
     "Cr": {"min": 0.50, "max": 1.30},
     "eGFR": {"min": 90},
@@ -1270,18 +1272,21 @@ def evoluir_paciente_enfermaria_ia_fase2(resumo_ia_fase1, dados_medico_hoje, evo
 
     template_evolucao_final = "".join(template_evolucao_parts)
 
-    prompt = f"""Você é um médico hospitalista sênior. Sua tarefa é gerar a nota de EVOLUÇÃO MÉDICA para HOJE.
+    prompt = f"""Você é um médico hospitalista sênior em convênio verticalizado. Sua tarefa é gerar a nota de EVOLUÇÃO MÉDICA para HOJE. Neste modelo, ofereça APENAS as terapias essenciais baseadas em evidência — nada a mais, nada a menos. Evite overtesting e polifarmácia.
 
 REGRA FUNDAMENTAL DE FORMATO: A evolução gerada DEVE preservar a estrutura e formato da 'Evolução Anterior Original' (fornecida em (2)). Tudo que puder ser mantido, DEVE ser mantido. Copie os campos inalterados VERBATIM. Atualize APENAS o que for necessário com base nos novos dados (fornecidos em (3)).
 
 REGRAS ESPECÍFICAS:
-- NÃO use abreviações. Escreva por extenso (ex: "Murmúrio vesicular" e não "MV"; "Ruídos hidroaéreos" e não "RHA"; "Membros inferiores" e não "MMII"; "Bulhas rítmicas normofonéticas" e não "BRNF").
-- #EXAME FÍSICO: PRESERVE o exame físico da evolução anterior como base. Altere APENAS os itens que o médico explicitamente atualizou nos novos dados. Se o médico informou apenas um achado novo (ex: "edema de MMII"), atualize SOMENTE esse item e mantenha todos os demais itens do exame físico anterior intactos e na mesma ordem.
-- #ID, #HD, #AP, #HDA (ou #HMA/#HPMA), #MUC, #ALERGIAS, #ATB, #TEV: Mantenha EXATAMENTE como estão na evolução anterior, a menos que haja informação diretamente contraditória nos novos dados.
+- NÃO use abreviações no texto clínico (anamnese, exame físico, conduta). Escreva por extenso (ex: "Murmúrio vesicular" e não "MV"; "Ruídos hidroaéreos" e não "RHA"; "Membros inferiores" e não "MMII"; "Bulhas rítmicas normofonéticas" e não "BRNF"). EXCEÇÃO: abreviações de exames laboratoriais (Hb, Ht, PCR, TGO, TGP, Na, K, Cr, BNP, etc.) DEVEM ser mantidas como estão — não as expanda.
+- #EXAME FÍSICO: PRESERVE o exame físico da evolução anterior como base. Altere APENAS os itens que o médico explicitamente atualizou nos novos dados. Se o médico informou apenas um achado novo (ex: "edema de membros inferiores"), atualize SOMENTE esse item e mantenha todos os demais itens do exame físico anterior intactos e na mesma ordem.
+- #ID, #HD, #AP, #HDA (ou #HMA/#HPMA): Mantenha EXATAMENTE como estão na evolução anterior, a menos que haja informação diretamente contraditória nos novos dados.
+- #MUC (Medicamentos de Uso Contínuo): Refere-se aos medicamentos que o paciente JÁ USAVA em casa antes da internação (uso crônico/domiciliar). NÃO inclua aqui medicações iniciadas durante a internação atual.
+- #ATB (Antibióticos): Inclua TODOS os antibióticos usados durante esta internação — tanto os já suspensos (com data de início e término) quanto os em uso atual (com data de início e dia de terapia D+X).
+- #ALERGIAS, #TEV (Profilaxia para TEV): Mantenha como na evolução anterior, salvo mudança explícita.
 - #CUIDADOS PALIATIVOS: Omita se não houver informação relevante ou se indicar "não"/"ausente"/"ndn"/vazio.
 - #EXAMES: Mantenha os exames anteriores e ADICIONE os novos resultados fornecidos.
 - #EVOLUÇÃO: Narrativa objetiva do dia, em linguagem clínica direta.
-- #PLANO TERAPÊUTICO e #CONDUTA: Gere novo conteúdo baseado na análise da IA e nos dados de hoje. Conduta em primeira pessoa, com hífens.
+- #PLANO TERAPÊUTICO e #CONDUTA: Gere novo conteúdo focado no essencial — ajustes necessários, desprescrição ativa de medicações sem indicação, progressão do cuidado. Conduta em primeira pessoa, com hífens.
 - ADICIONE UMA LINHA EM BRANCO APÓS CADA CAMPO PRINCIPAL.
 
 (1) Análise da IA (consultor hospitalista) sobre a evolução anterior:
@@ -1309,8 +1314,6 @@ def preencher_admissao_ia(info_caso_original, file_parts=None):
     info_caso = anonimizar_texto(info_caso_original)
     template_admissao = """# UNIDADE DE INTERNAÇÃO - ADMISSÃO #
 
-#CUIDADOS PALIATIVOS:
-
 #ID:
 
 #HD:
@@ -1328,7 +1331,7 @@ def preencher_admissao_ia(info_caso_original, file_parts=None):
 #TEV:
 
 #EXAMES:
->CULTURAS/ANTÍGENOS:
+>MICROBIOLOGIA:
 >IMAGEM:
 >LABS:
 
@@ -1342,10 +1345,26 @@ def preencher_admissao_ia(info_caso_original, file_parts=None):
 
 #DATA PROVÁVEL DA ALTA: SEM PREVISÃO"""
 
-    prompt = f"""Você é um assistente médico eficiente. Preencha o seguinte modelo de admissão hospitalar com as informações fornecidas sobre o caso do paciente.
-Se alguma informação específica para um campo não for fornecida no texto do caso, deixe o campo correspondente em branco.
-É crucial não inventar (alucinar) informações que não estão presentes no texto fornecido.
-Após cada campo preenchido (ex: #HD: texto), adicione uma linha em branco antes do próximo campo (ex: #AP:).
+    prompt = f"""Você é um médico hospitalista sênior em convênio verticalizado. Neste modelo, ofereça APENAS as terapias essenciais baseadas em evidência — nada a mais, nada a menos. Evite overtesting e polifarmácia desde a admissão.
+
+Sua tarefa é preencher o modelo de ADMISSÃO HOSPITALAR com as informações fornecidas sobre o caso. Siga as regras rigorosamente:
+
+REGRAS DE PREENCHIMENTO:
+- Se alguma informação específica para um campo não for fornecida no caso, deixe o campo em branco.
+- É crucial NÃO inventar (alucinar) informações que não estão presentes no texto fornecido.
+- Após cada campo preenchido, adicione uma linha em branco antes do próximo campo.
+
+REGRAS DE ABREVIAÇÕES:
+- NÃO use abreviações no texto clínico (HDA, exame físico, conduta). Escreva por extenso (ex: "Murmúrio vesicular" e não "MV"; "Ruídos hidroaéreos" e não "RHA"; "Membros inferiores" e não "MMII").
+- EXCEÇÃO: abreviações de exames laboratoriais (Hb, Ht, PCR, TGO, TGP, Na, K, Cr, BNP, etc.) DEVEM ser mantidas como estão.
+
+DEFINIÇÕES IMPORTANTES DOS CAMPOS:
+- #MUC (Medicamentos de Uso Contínuo): Refere-se aos medicamentos que o paciente JÁ USAVA em casa antes da internação (uso crônico/domiciliar). NÃO inclua aqui medicações iniciadas durante esta internação.
+- #ATB (Antibióticos): Inclua TODOS os antibióticos já usados ou em uso atual durante esta internação, com datas de início (e término, se suspenso).
+- #TEV: Profilaxia para tromboembolismo venoso (medicamentosa ou mecânica).
+- #CUIDADOS PALIATIVOS: ADICIONE este campo no TOPO da nota (acima de #ID) APENAS se o caso indicar explicitamente que o paciente está em cuidados paliativos. Caso contrário, OMITA completamente este campo — não o escreva.
+- #EXAMES > MICROBIOLOGIA: Culturas (urocultura, hemocultura), antígenos (pneumocócico, legionella), PCR viral, etc.
+- #PLANO TERAPÊUTICO e #CONDUTA: Proponha APENAS o essencial. Justifique brevemente cada intervenção. Evite rotinas desnecessárias.
 
 Informações do caso:
 ---
