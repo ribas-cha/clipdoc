@@ -366,7 +366,7 @@ VALORES_REFERENCIA = {
     "BE_gas": {"min": -3.0, "max": 3.0},
     "pO2_gas": {"min": 80.0, "max": 95.0, "crit_low": 40},
     "SatO2_gas": {"min": 95.0, "max": 99.0, "crit_low": 88},
-    "Lac_gas": {"max": 2.0, "crit_high": 4.0},
+    "Lac_gas": {"min": 4.5, "max": 20, "crit_high": 40},
     "Lac": {"min": 4, "max": 20, "crit_high": 30.0},
     "cCO2_gas": {"min": 23.0, "max": 29.0}
 }
@@ -908,7 +908,8 @@ def extract_urina_tipo_i(lines, is_tecnolab):
     
     if is_tecnolab:
         for line in search_u1:
-            match = re.match(r"\s*([A-Z\s-]+)\s*:\s*(.+)", line)
+            # Regex inclui letras acentuadas maiúsculas (À-Ú) para capturar PROTEÍNA, HEMÁCIAS, LEUCÓCITOS, REAÇÃO etc.
+            match = re.match(r"\s*([A-ZÀ-Ú\s-]+)\s*:\s*(.+)", line)
             if match:
                 key, value = match.group(1).strip().lower(), match.group(2).strip()
                 val_num_match = re.search(NUM_PATTERN, value)
@@ -919,12 +920,13 @@ def extract_urina_tipo_i(lines, is_tecnolab):
                 elif "nitrito" in key: results["U1_nit"] = "(-)" if "negativo" in value.lower() else "(+)"
                 elif "corpos cetônicos" in key: results["U1_CC"] = "(-)" if "negativo" in value.lower() else "(+)"
                 elif "hemácias" in key:
-                     if val_num_match: results["U1_hem"] = val_num_match.group(1).replace(".", "")
+                     # Preserva formato brasileiro com ponto como separador de milhar (ex: 3.000)
+                     if val_num_match: results["U1_hem"] = val_num_match.group(1)
                 elif "leucócitos" in key:
                     if "acima de" in value.lower() and val_num_match:
-                        results["U1_leuco"] = ">" + val_num_match.group(1).replace(".", "")
+                        results["U1_leuco"] = ">" + val_num_match.group(1)
                     elif val_num_match:
-                        results["U1_leuco"] = val_num_match.group(1).replace(".", "")
+                        results["U1_leuco"] = val_num_match.group(1)
         return results
 
     for line in search_u1:
