@@ -1187,6 +1187,31 @@ Destaque em negrito se houver sinais de deterioração (qSOFA, instabilidade, de
 7. Gargalo da Alta (Discharge Planning)
 Qual é o fator limitante para a alta deste paciente neste exato momento? (Ex: Término de ATB IV, instabilidade hemodinâmica, aguardando vaga de transição, dependência de O2). O que precisamos fazer HOJE para resolver esse gargalo amanhã?
 
+---
+REFERÊNCIAS DE STEWARDSHIP DE ANTIBIÓTICO (use ao sugerir duração, switch IV→VO ou de-escalação):
+
+Duração recomendada (IDSA/SBI/Sanford):
+- PAC não grave (CURB-65 < 2): 5 dias, desde que afebril 48h e estável
+- PAC grave ou bacterêmica: 7 dias
+- ITU baixa não complicada: 3-5 dias (nitrofurantoína 5d, fosfomicina 1d, SMX-TMP 3d)
+- Pielonefrite/ITU complicada: 7 dias (fluoroquinolona) ou 10-14 dias (betalactâmico)
+- Celulite não purulenta: 5-6 dias, estendível se resposta lenta
+- Infecção intra-abdominal com controle de foco: 4-7 dias
+- Bacteriemia por BGN (foco controlado): 7 dias
+- Bacteriemia por S. aureus: 14 dias mínimo (investigar endocardite)
+- Meningite bacteriana: depende do agente (pneumococo 10-14d, N. meningitidis 7d, Listeria 21d)
+
+Critérios para switch IV→VO (COMS - todos devem estar presentes):
+- Clinical improvement (melhora clínica sustentada)
+- Oral route available (tolerando VO, sem vômitos/íleo/má-absorção)
+- Markers improving (febre em queda 24h, leucócitos caindo)
+- Stable hemodynamic 24-48h
+
+Sinais de alerta para escalonamento/revisão:
+- Piora clínica após 72h de ATB adequado → reavaliar diagnóstico, cobertura, foco
+- Cultura positiva com resistência à cobertura empírica → ajustar imediatamente
+- Cultura negativa após 48h em paciente estável com baixa probabilidade pré-teste → considerar suspender
+
 Evolução do paciente:
 ---
 {evolucao_anterior}
@@ -1291,6 +1316,26 @@ REGRAS ESPECÍFICAS:
 - #PLANO TERAPÊUTICO e #CONDUTA: Gere novo conteúdo focado no essencial — ajustes necessários, desprescrição ativa de medicações sem indicação, progressão do cuidado. Conduta em primeira pessoa, com hífens.
 - ADICIONE UMA LINHA EM BRANCO APÓS CADA CAMPO PRINCIPAL.
 
+DIRETRIZES DE STEWARDSHIP DE ANTIBIÓTICO (aplicar ao gerar #PLANO TERAPÊUTICO e #CONDUTA):
+Ao recomendar início, manutenção, de-escalação ou término de antibiótico, consulte estas durações baseadas em IDSA/SBI/Sanford:
+- PAC não grave: 5 dias; PAC grave/bacterêmica: 7 dias
+- ITU baixa não complicada: 3-5 dias; Pielonefrite/ITU complicada: 7 dias (fluoroquinolona) ou 10-14 dias (betalactâmico)
+- Celulite não purulenta: 5-6 dias
+- Infecção intra-abdominal com controle de foco: 4-7 dias
+- Bacteriemia por BGN (foco controlado): 7 dias; Bacteriemia por S. aureus: 14 dias mínimo
+Switch IV→VO (COMS - todos presentes): melhora clínica sustentada, via oral disponível, marcadores inflamatórios em queda, estabilidade hemodinâmica ≥24h.
+Quando sugerir início de ATB no #CONDUTA, inclua duração estimada. Quando sugerir switch ou suspensão, justifique com base nos critérios acima.
+
+VERIFICADOR DE SEGURANÇA DE PRESCRIÇÃO (CONDICIONAL):
+Se — e APENAS SE — os 'Novos dados de HOJE' (fornecidos em (3)) incluírem uma prescrição ou lista de medicamentos em uso hospitalar, analise-a silenciosamente e mencione no #CONDUTA QUALQUER um dos seguintes pontos que identificar:
+- Medicações que precisam de ajuste por função renal (use a Cr/eGFR disponíveis): ex. enoxaparina em ClCr<30, metformina em ClCr<45, gabapentina em ClCr<60, ATB nefrotóxicos.
+- Duplicidade terapêutica na mesma classe (ex. dois IECAs, dois BZD, dois IBPs).
+- Interações clinicamente relevantes (ex. AAS+clopidogrel+anticoagulante sem indicação clara, amiodarona+warfarina sem monitoramento).
+- Critérios de Beers em idoso (>65a): BZD de ação prolongada, anti-histamínicos de 1ª geração, relaxantes musculares centrais, antipsicóticos sem indicação psiquiátrica clara.
+- Polifarmácia (>10 medicamentos ativos) — sugerir revisão formal.
+- Profilaxias em falta: TVP farmacológica em paciente de risco (Padua ≥4) sem contraindicação, profilaxia gástrica em paciente com indicação válida (UTI + ventilação mecânica OU coagulopatia, NÃO apenas por uso de corticoide).
+Se NÃO houver prescrição nos dados fornecidos, ignore completamente esta seção — NÃO mencione nada sobre segurança de prescrição.
+
 (1) Análise da IA (consultor hospitalista) sobre a evolução anterior:
 ---
 {resumo_ia_fase1}
@@ -1310,6 +1355,48 @@ Gere a nota de EVOLUÇÃO MÉDICA para HOJE, preenchendo o modelo abaixo. Lembre
 {template_evolucao_final}
 """
     return gerar_resposta_ia(prompt, file_parts=file_parts)
+
+
+def gerar_passagem_caso_sbar_ia(evolucao_final):
+    evolucao_anon = anonimizar_texto(evolucao_final)
+    prompt = f"""Você é um médico hospitalista sênior preparando uma passagem de caso para o plantão noturno ou cobertura de fim de semana.
+
+Gere uma passagem de caso estruturada no formato SBAR, em linguagem clínica direta e objetiva. A passagem deve ser CONCISA (máximo 1 página), acionável e focada no que o colega precisa saber para tomar decisões seguras.
+
+Estrutura OBRIGATÓRIA:
+
+**S — Situação**
+Uma frase: paciente, idade, D+X de internação, diagnóstico principal, estado atual em uma palavra (estável/instável/piorando/melhorando).
+
+**B — Background**
+Bullet points curtos com o essencial: antecedentes relevantes, evolução resumida da internação, resultados-chave de exames/imagens, ATB em uso (com D+X) ou procedimentos realizados.
+
+**A — Avaliação**
+- Status hemodinâmico e respiratório atual
+- Principais pendências diagnósticas abertas (exames aguardando, interconsultas aguardando retorno)
+- Problemas ativos (lista numerada curta)
+
+**R — Recomendação (o que o colega deve fazer)**
+- O que monitorar esta noite / neste plantão (sinais vitais específicos, débito urinário, sintomas de alerta)
+- Parâmetros de alerta que justificam ligação (ex: "Chamar se FC>120, PAS<90, SpO2<92% em ar ambiente")
+- Pendências de exames/interconsultas que podem chegar durante o plantão e o que fazer com eles
+- Código de Reanimação / Diretivas antecipadas (se conhecido)
+- Medicações SOS prescritas disponíveis
+
+REGRAS:
+- NÃO use abreviações clínicas (escreva "Pressão arterial sistólica" e não "PAS" no texto corrido — mas em valores numéricos você pode manter as siglas comuns).
+- Mantenha abreviações de exames laboratoriais (Hb, PCR, Cr, etc.).
+- Seja direto. O colega que recebe a passagem tem 5-10 minutos para ler. Elimine qualquer palavra que não agregue decisão.
+- Se a evolução fornecida não contém informação para uma seção, indique "(não disponível na evolução)".
+
+Evolução atual do paciente:
+---
+{evolucao_anon}
+---
+
+Gere a passagem de caso SBAR:
+"""
+    return gerar_resposta_ia(prompt)
 
 
 def preencher_admissao_ia(info_caso_original, file_parts=None):
@@ -1367,6 +1454,26 @@ DEFINIÇÕES IMPORTANTES DOS CAMPOS:
 - #CUIDADOS PALIATIVOS: ADICIONE este campo no TOPO da nota (acima de #ID) APENAS se o caso indicar explicitamente que o paciente está em cuidados paliativos. Caso contrário, OMITA completamente este campo — não o escreva.
 - #EXAMES > MICROBIOLOGIA: Culturas (urocultura, hemocultura), antígenos (pneumocócico, legionella), PCR viral, etc.
 - #PLANO TERAPÊUTICO e #CONDUTA: Proponha APENAS o essencial. Justifique brevemente cada intervenção. Evite rotinas desnecessárias.
+
+BUNDLE DE ADMISSÃO (preencha proativamente #PLANO TERAPÊUTICO e #CONDUTA com base na hipótese diagnóstica):
+Quando a HD for identificável a partir do caso, proponha no #PLANO TERAPÊUTICO:
+1. Investigação direcionada: exames estritamente necessários para confirmar/refinar a HD (evite painéis amplos). Exemplos:
+   - Suspeita de PAC: hemograma, PCR, gasometria se SatO2<94%, radiografia de tórax, hemocultura se sepse/grave, antígenos urinários (pneumococo/legionella) se grave.
+   - Suspeita de ITU: urina tipo I, urocultura, hemograma, PCR, creatinina, hemocultura se sepse.
+   - Suspeita de sepse: hemograma, PCR, lactato, gasometria, função renal, hemoculturas 2 sítios, cultura do foco suspeito.
+   - Síndrome coronariana: ECG seriado, troponina alta sensibilidade seriada, escore GRACE.
+2. Estratificação de risco: calcule ou mencione o escore apropriado quando aplicável (CURB-65 para PAC, qSOFA para sepse, GRACE/HEART para SCA, Wells para TEP, Padua para profilaxia de TEV, CHA2DS2-VASc para FA).
+3. Profilaxias indicadas: TEV (calcule Padua — ≥4 indica profilaxia farmacológica, se sem contraindicação), profilaxia gástrica APENAS se houver indicação formal (UTI com ventilação mecânica OU coagulopatia OU sangramento digestivo prévio — NÃO apenas por corticoide ou estresse).
+
+DIRETRIZES DE STEWARDSHIP DE ANTIBIÓTICO (aplicar ao sugerir início de ATB na admissão):
+Baseado em IDSA/SBI/Sanford. Ao propor ATB empírico, SEMPRE inclua duração estimada e critérios de descalonamento:
+- PAC não grave (CURB-65<2): amoxicilina-clavulanato ou ceftriaxona + macrolídeo se grave; duração 5 dias se afebril em 48h.
+- PAC grave: ceftriaxona + macrolídeo (ou fluoroquinolona respiratória); 7 dias.
+- ITU complicada/pielonefrite: ceftriaxona ou fluoroquinolona; 7 dias (FQ) ou 10-14 dias (betalactâmico).
+- Celulite não purulenta: cefazolina/cefalexina; 5-6 dias.
+- Infecção intra-abdominal com controle de foco: 4-7 dias após controle.
+- Sepse sem foco definido: ampla cobertura (piperacilina-tazobactam ou cefepime, ± vancomicina); ajustar em 48-72h com culturas.
+Nunca iniciar ATB sem: (1) coleta prévia de culturas sempre que possível, (2) diagnóstico presuntivo claro, (3) duração estimada, (4) plano de reavaliação em 48-72h.
 
 Informações do caso:
 ---
@@ -1696,6 +1803,7 @@ for key, default in [
     ("ia_fase_evolucao_interativa", 1),
     ("ia_dados_medico_hoje", ""),
     ("ia_output_evolucao_final", ""),
+    ("ia_output_sbar", ""),
     ("ia_output_resumo_alta", ""),
     ("ia_output_orientacoes_alta", ""),
     ("input_text_area_content_tab1", ""),
@@ -1896,6 +2004,7 @@ with tab2:
                         st.session_state.ia_dados_medico_hoje = ""
                         st.session_state.ia_output_evolucao_final = ""
                         st.session_state.evolucao_anterior_original_para_fase2 = ""
+                        st.session_state.ia_output_sbar = ""
                         st.rerun()
 
             if current_fase == 3:
@@ -1915,7 +2024,30 @@ with tab2:
                         label_visibility="collapsed"
                     )
                     components.html(make_copy_button_html("cClipEvolFinal", st.session_state.ia_output_evolucao_final, "Copiar evolução final"), height=55)
+                    
+                    st.markdown("---")
+                    st.markdown('<p class="cd-section-label">📋 Passagem de caso (SBAR) — opcional</p>', unsafe_allow_html=True)
+                    st.caption("Gera uma passagem estruturada para o plantão noturno ou cobertura de fim de semana.")
+                    
+                    col_sbar1, col_sbar2 = st.columns([3, 1])
+                    with col_sbar1:
+                        if st.button("Gerar Passagem de Caso (SBAR)", key="btn_gerar_sbar", type="primary"):
+                            with st.spinner("IA gerando a passagem SBAR..."):
+                                st.session_state.ia_output_sbar = gerar_passagem_caso_sbar_ia(
+                                    st.session_state.ia_output_evolucao_final
+                                )
+                            st.rerun()
+                    with col_sbar2:
+                        if st.session_state.get("ia_output_sbar"):
+                            if st.button("Limpar SBAR", key="btn_limpar_sbar"):
+                                st.session_state.ia_output_sbar = ""
+                                st.rerun()
+                    
+                    if st.session_state.get("ia_output_sbar"):
+                        st.markdown(st.session_state.ia_output_sbar)
+                        components.html(make_copy_button_html("cClipSBAR", st.session_state.ia_output_sbar, "Copiar passagem SBAR"), height=55)
                 
+                st.markdown("---")
                 if st.button("Iniciar nova evolução", key="btn_nova_evol_interativa"):
                     st.session_state.ia_fase_evolucao_interativa = 1
                     st.session_state.evolucao_anterior_input_fase1 = ""
@@ -1923,6 +2055,7 @@ with tab2:
                     st.session_state.ia_dados_medico_hoje = ""
                     st.session_state.ia_output_evolucao_final = ""
                     st.session_state.evolucao_anterior_original_para_fase2 = ""
+                    st.session_state.ia_output_sbar = ""
                     st.rerun()
 
         # --- Auxiliar na Admissão ---
